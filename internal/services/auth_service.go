@@ -19,11 +19,11 @@ import (
 
 type AuthService struct {
 	userRepo        *repository.UserRepo
-	refreshTokenRepo *repository.RefreshTokenRepo
+	refreshTokenRepo *repository.RefreshTokenRepository
 	config          *config.Config
 }
 
-func NewAuthService(userRepo *repository.UserRepo, refreshTokenRepo *repository.RefreshTokenRepo, cfg *config.Config) *AuthService {
+func NewAuthService(userRepo *repository.UserRepo, refreshTokenRepo *repository.RefreshTokenRepository, cfg *config.Config) *AuthService {
 	return &AuthService{
 		userRepo:        userRepo,
 		refreshTokenRepo: refreshTokenRepo,
@@ -31,7 +31,7 @@ func NewAuthService(userRepo *repository.UserRepo, refreshTokenRepo *repository.
 	}
 }
 
-// Register - creates a new user account
+
 func (s *AuthService) Register(ctx context.Context, req *models.RegisterRequest) (*models.AuthResponse, error) {
 	exists, err := s.userRepo.CheckEmailExists(ctx, req.Email)
 	if err != nil {

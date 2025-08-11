@@ -14,7 +14,7 @@ func AuthMiddleware(authService *services.AuthService) gin.HandlerFunc {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader ==""{
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-			c.ABORT()
+			c.Abort()
 			return 
 		}
 		tokenParts := strings.Split(authHeader, " ")
@@ -27,7 +27,7 @@ func AuthMiddleware(authService *services.AuthService) gin.HandlerFunc {
 		userID, err := authService.ValidateToken(token)
 		if err != nil{
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-			c.ABORT()
+			c.Abort()
 			return 
 		}
 		c.Set("userID", userID)

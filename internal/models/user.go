@@ -8,12 +8,21 @@ import (
 
 // User
 type User struct {
-	ID           uuid.UUID `json:"id"`
-	Username     string    `json:"username"`
-	Email        string    `json:"email"`
-	Password string    `json:"-"` 
-	RefreshToken *string `json:"-"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID           uuid.UUID `json:"id" gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
+	Username     string    `json:"username" gorm:"not null;unique"`
+	Email        string    `json:"email" gorm:"not null;unique"`
+	Password     string    `json:"-" gorm:"not null"`
+	RefreshToken *string   `json:"-"`
+	CreatedAt    time.Time `json:"created_at" gorm:"not null"`
+	
+	// Relationships
+	Messages       []Message       `json:"messages,omitempty" gorm:"foreignKey:SenderID"`
+	Conversations  []Conversation  `json:"conversations,omitempty" gorm:"many2many:conversation_participants;"`
+	RefreshTokens  []RefreshToken  `json:"-" gorm:"foreignKey:UserID"`
+}
+
+func (User) TableName() string {
+	return "users"
 }
 
 // RegisterRequest 
@@ -38,14 +47,20 @@ type AuthResponse struct {
 
 // RefreshToken 
 type RefreshToken struct {
-	ID        uuid.UUID `json:"id"`
-	UserID    uuid.UUID `json:"user_id"`
-	TokenHash string    `json:"-"` 
-	ExpiresAt time.Time `json:"expires_at"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        uuid.UUID `json:"id" gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
+	UserID    uuid.UUID `json:"user_id" gorm:"type:uuid;not null"`
+	TokenHash string    `json:"-" gorm:"not null;unique"`
+	ExpiresAt time.Time `json:"expires_at" gorm:"not null"`
+	CreatedAt time.Time `json:"created_at" gorm:"not null"`
+	
+	// Relationships
+	User User `json:"-" gorm:"foreignKey:UserID"`
 }
 
-// RefreshTokenRequest - request model for refresh token operations
+func (RefreshToken) TableName() string {
+	return "refresh_tokens"
+}
+
 type RefreshTokenRequest struct {
 	RefreshToken string `json:"refresh_token" binding:"required"`
 }

@@ -25,16 +25,23 @@ func main() {
 	}
 	defer db.Close()
 	
-	userRepo := repository.NewUserRepo(db.Pool)
-	refreshTokenRepo := repository.NewRefreshTokenRepo(db.Pool)
+	// Run migrations
+	if err := db.AutoMigrate(); err != nil {
+		log.Fatalf("Failed to run migrations: %v", err)
+	}
+	
+	userRepo := repository.NewUserRepo(db.GetDB())
+	refreshTokenRepo := repository.NewRefreshTokenRepository(db.GetDB())
+	chatRepo := repository.NewChatRepository(db.GetDB())
 	
 	// Pass config instead of just JWT secret
-	authService := services.NewAuthService(userRepo,refreshTokenRepo,cfg)
-	r := routes.SetupRoutes(authService)
+	authService := services.NewAuthService(userRepo, refreshTokenRepo, cfg)
+	chatService := services.NewChatService(chatRepo, userRepo)
+	r := routes.SetupRoutes(authService, userRepo, chatService)
 
 	log.Printf("Server is running on %s", cfg.GetServerAddress())
-
 	
+	// Start the HTTP server
 	if err := r.Run(cfg.GetServerAddress()); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
