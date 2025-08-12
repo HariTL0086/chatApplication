@@ -132,4 +132,14 @@ func (s *ChatService) GetConversationByRoomName(ctx context.Context, roomName st
 	}
 	
 	return s.chatRepo.GetConversationByParticipants(ctx, userID1, userID2)
+}
+
+// GetConversationByGroupID retrieves a conversation for a group
+func (s *ChatService) GetConversationByGroupID(ctx context.Context, groupID uuid.UUID) (*models.Conversation, error) {
+	return s.chatRepo.GetConversationByGroupID(ctx, groupID)
+}
+
+// DeleteConversationByGroupID deletes a conversation associated with a group
+func (s *ChatService) DeleteConversationByGroupID(ctx context.Context, groupID uuid.UUID) error {
+	return s.chatRepo.DeleteConversationByGroupID(ctx, groupID)
 } 

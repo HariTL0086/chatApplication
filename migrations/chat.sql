@@ -26,9 +26,3 @@ CREATE TABLE messages (
     message_status VARCHAR(20) DEFAULT 'sent'
 );
 
--- User public keys for E2E encryption
-CREATE TABLE user_keys (
-    user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-    public_key TEXT NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);

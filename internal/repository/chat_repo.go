@@ -180,3 +180,49 @@ func (r *ChatRepository) UpdateMessageStatus(ctx context.Context, messageID uuid
 
 	return result.Error
 }
+
+// GetConversationByGroupID retrieves a conversation for a group
+func (r *ChatRepository) GetConversationByGroupID(ctx context.Context, groupID uuid.UUID) (*models.Conversation, error) {
+	var conversation models.Conversation
+	result := r.db.WithContext(ctx).
+		Where("group_id = ? AND type = ?", groupID, "group").
+		First(&conversation)
+
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, errors.New("group conversation not found")
+		}
+		return nil, result.Error
+	}
+
+	return &conversation, nil
+}
+
+// DeleteConversationByGroupID deletes a conversation associated with a group
+func (r *ChatRepository) DeleteConversationByGroupID(ctx context.Context, groupID uuid.UUID) error {
+	// First delete all messages in the conversation
+	var conversation models.Conversation
+	if err := r.db.WithContext(ctx).Where("group_id = ? AND type = ?", groupID, "group").First(&conversation).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil // No conversation to delete
+		}
+		return err
+	}
+
+	// Delete messages first (due to foreign key constraints)
+	if err := r.db.WithContext(ctx).Where("conversation_id = ?", conversation.ID).Delete(&models.Message{}).Error; err != nil {
+		return err
+	}
+
+	// Delete conversation participants from the junction table
+	if err := r.db.WithContext(ctx).Exec("DELETE FROM conversation_participants WHERE conversation_id = ?", conversation.ID).Error; err != nil {
+		return err
+	}
+
+	// Finally delete the conversation
+	if err := r.db.WithContext(ctx).Delete(&conversation).Error; err != nil {
+		return err
+	}
+
+	return nil
+}

@@ -67,8 +67,9 @@ func (db *DB) AutoMigrate() error {
 	return db.GormDB.AutoMigrate(
 		&models.User{},
 		&models.Message{},
-		&models.UserKey{},
 		&models.RefreshToken{},
 		&models.Conversation{},
+		&models.Group{},
+		&models.GroupMember{},
 	)
 }

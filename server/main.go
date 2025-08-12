@@ -24,6 +24,11 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 	defer db.Close()
+
+	// Connect to Redis using config
+	
+
+	
 	
 	// Run migrations
 	if err := db.AutoMigrate(); err != nil {
@@ -33,11 +38,13 @@ func main() {
 	userRepo := repository.NewUserRepo(db.GetDB())
 	refreshTokenRepo := repository.NewRefreshTokenRepository(db.GetDB())
 	chatRepo := repository.NewChatRepository(db.GetDB())
+	groupRepo := repository.NewGroupRepository(db.GetDB())
 	
 	// Pass config instead of just JWT secret
 	authService := services.NewAuthService(userRepo, refreshTokenRepo, cfg)
 	chatService := services.NewChatService(chatRepo, userRepo)
-	r := routes.SetupRoutes(authService, userRepo, chatService)
+	groupService := services.NewGroupService(groupRepo, userRepo, chatRepo)
+	r := routes.SetupRoutes(authService, userRepo, chatService, groupService)
 
 	log.Printf("Server is running on %s", cfg.GetServerAddress())
 	

@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Group Chat Test</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr 2fr;
+            gap: 20px;
+        }
+
+        .auth-section,
+        .group-section,
+        .chat-section,
+        .members-section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .chat-section {
+            grid-column: 3;
+        }
+
+        .members-section {
+            grid-column: 2;
+            grid-row: 2;
+        }
+
+        input,
+        textarea,
+        button,
+        select {
+            width: 100%;
+            padding: 10px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        button.danger {
+            background-color: #dc3545;
+        }
+
+        button.danger:hover {
+            background-color: #c82333;
+        }
+
+        button.success {
+            background-color: #28a745;
+        }
+
+        button.success:hover {
+            background-color: #218838;
+        }
+
+        .message {
+            background: #f8f9fa;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+            border-left: 4px solid #007bff;
+        }
+
+        .message.sent {
+            background: #d4edda;
+            border-left-color: #28a745;
+        }
+
+        .message.received {
+            background: #f8f9fa;
+            border-left-color: #6c757d;
+        }
+
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .group-list {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+        }
+
+        .group-item {
+            padding: 8px;
+            margin: 2px 0;
+            background: #f8f9fa;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .group-item:hover {
+            background: #e9ecef;
+        }
+
+        .group-item.active {
+            background: #007bff;
+            color: white;
+        }
+
+        .group-item .group-actions {
+            display: none;
+        }
+
+        .group-item:hover .group-actions {
+            display: block;
+        }
+
+        .group-item .group-actions button {
+            padding: 2px 8px;
+            margin: 0 2px;
+            font-size: 12px;
+        }
+
+        .chat-messages {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+
+        .member-list {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+        }
+
+        .member-item {
+            padding: 8px;
+            margin: 2px 0;
+            background: #f8f9fa;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .member-item .member-role {
+            font-size: 12px;
+            color: #6c757d;
+        }
+
+        .member-item .member-actions {
+            display: none;
+        }
+
+        .member-item:hover .member-actions {
+            display: block;
+        }
+
+        .member-item .member-actions button {
+            padding: 2px 8px;
+            margin: 0 2px;
+            font-size: 12px;
+        }
+
+        .section-title {
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #007bff;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Group Chat Test</h1>
+
+    <div class="container">
+        <div class="auth-section">
+            <h3 class="section-title">Authentication</h3>
+            <input type="email" id="email" placeholder="Email" value="test@example.com">
+            <input type="password" id="password" placeholder="Password" value="password123">
+            <button onclick="login()">Login</button>
+            <button onclick="register()">Register</button>
+            <div id="auth-status"></div>
+        </div>
+
+        <div class="group-section">
+            <h3 class="section-title">Group Management (Socket.IO Only)</h3>
+            <input type="text" id="groupName" placeholder="Group Name">
+            <textarea id="groupDescription" placeholder="Group Description"></textarea>
+            <input type="text" id="memberIds" placeholder="Member IDs (comma separated)">
+            <button onclick="createGroup()" class="success">Create Group</button>
+            <button onclick="getUserGroups()">Get My Groups</button>
+
+            <h4>Group Operations</h4>
+            <input type="text" id="groupId" placeholder="Group ID for operations">
+            <input type="text" id="newGroupName" placeholder="New group name">
+            <textarea id="newGroupDescription" placeholder="New group description"></textarea>
+            <button onclick="updateGroup()" class="success">Update Group</button>
+            <button onclick="deleteGroup()" class="danger">Delete Group</button>
+            <button onclick="getGroupInfo()">Get Group Info</button>
+
+            <div id="group-status"></div>
+            <div class="group-list" id="groupList"></div>
+        </div>
+
+        <div class="members-section">
+            <h3 class="section-title">Group Members</h3>
+            <div id="members-status"></div>
+            <div class="member-list" id="memberList"></div>
+
+            <h4>Add Member</h4>
+            <input type="text" id="newMemberId" placeholder="User ID to add">
+            <select id="newMemberRole">
+                <option value="member">Member</option>
+                <option value="admin">Admin</option>
+            </select>
+            <button onclick="addMember()" class="success">Add Member</button>
+
+            <h4>Change Member Role</h4>
+            <select id="memberRoleSelect">
+                <option value="member">Member</option>
+                <option value="admin">Admin</option>
+            </select>
+            <button onclick="changeMemberRole()">Change Role</button>
+
+            <h4>Exit Group</h4>
+            <button onclick="exitGroup()" class="danger">Exit Current Group</button>
+
+            <h4>Member Operations</h4>
+            <input type="text" id="memberId" placeholder="User ID for operations">
+            <select id="memberRole">
+                <option value="member">Member</option>
+                <option value="admin">Admin</option>
+            </select>
+            <button onclick="addMember()" class="success">Add Member</button>
+            <button onclick="removeMember()" class="danger">Remove Member</button>
+            <button onclick="changeMemberRole()">Change Role</button>
+        </div>
+
+        <div class="chat-section">
+            <h3 class="section-title">Group Chat</h3>
+            <div class="chat-messages" id="chatMessages"></div>
+            <textarea id="messageInput" placeholder="Type your message..."></textarea>
+            <button onclick="sendGroupMessage()">Send Message</button>
+            <div id="chat-status"></div>
+        </div>
+    </div>
+
+    <script>
+        let socket;
+        let currentGroupId = null;
+        let authToken = null;
+        let currentGroupMembers = [];
+
+        // Initialize Socket.IO connection
+        function initSocket() {
+            socket = io('http://localhost:8080', {
+                transports: ['websocket', 'polling']
+            });
+
+            socket.on('connect', () => {
+                showStatus('auth-status', 'Connected to server', 'info');
+            });
+
+            socket.on('disconnect', () => {
+                showStatus('auth-status', 'Disconnected from server', 'error');
+            });
+
+            socket.on('auth_required', (data) => {
+                showStatus('auth-status', data.message, 'info');
+            });
+
+            socket.on('auth_success', (data) => {
+                showStatus('auth-status', 'Authentication successful!', 'success');
+            });
+
+            socket.on('auth_error', (data) => {
+                showStatus('auth-status', 'Authentication failed: ' + data.error, 'error');
+            });
+
+            socket.on('joined_group', (data) => {
+                showStatus('chat-status', `Joined group: ${data.group_name}`, 'success');
+                currentGroupId = data.group_id;
+                if (data.messages) {
+                    displayMessages(data.messages);
+                }
+                getGroupMembers();
+            });
+
+            socket.on('left_group', (data) => {
+                showStatus('chat-status', `Left group: ${data.group_id}`, 'info');
+            });
+
+            socket.on('new_group_message', (data) => {
+                addMessage(data, 'received');
+            });
+
+            // New group management events
+            socket.on('group_created', (data) => {
+                showStatus('group-status', `Group created: ${data.group_name}`, 'success');
+                getUserGroups(); // Refresh group list
+            });
+
+            socket.on('group_updated', (data) => {
+                showStatus('group-status', `Group updated: ${data.group_name}`, 'success');
+                if (currentGroupId === data.group_id) {
+                    getGroupMembers(); // Refresh member list
+                }
+            });
+
+            socket.on('group_deleted', (data) => {
+                showStatus('group-status', `Group deleted: ${data.group_id}`, 'info');
+                if (currentGroupId === data.group_id) {
+                    currentGroupId = null;
+                    document.getElementById('chatMessages').innerHTML = '';
+                    document.getElementById('memberList').innerHTML = '';
+                }
+                getUserGroups(); // Refresh group list
+            });
+
+            socket.on('member_added', (data) => {
+                showStatus('members-status', `Member added: ${data.user_id}`, 'success');
+                if (currentGroupId === data.group_id) {
+                    getGroupMembers(); // Refresh member list
+                }
+            });
+
+            socket.on('member_removed', (data) => {
+                showStatus('members-status', `Member removed: ${data.user_id}`, 'info');
+                if (currentGroupId === data.group_id) {
+                    getGroupMembers(); // Refresh member list
+                }
+            });
+
+            socket.on('member_role_changed', (data) => {
+                showStatus('members-status', `Role changed for ${data.user_id}: ${data.new_role}`, 'success');
+                if (currentGroupId === data.group_id) {
+                    getGroupMembers(); // Refresh member list
+                }
+            });
+
+            socket.on('added_to_group', (data) => {
+                showStatus('auth-status', `You were added to group: ${data.group_id}`, 'success');
+                getUserGroups(); // Refresh group list
+            });
+
+            socket.on('removed_from_group', (data) => {
+                showStatus('auth-status', `You were removed from group: ${data.group_id}`, 'error');
+                if (currentGroupId === data.group_id) {
+                    currentGroupId = null;
+                    document.getElementById('chatMessages').innerHTML = '';
+                    document.getElementById('memberList').innerHTML = '';
+                }
+                getUserGroups(); // Refresh group list
+            });
+
+            socket.on('group_info', (data) => {
+                showStatus('group-status', `Group Info: ${data.name}`, 'success');
+                console.log('Group Info:', data);
+                // You can display this information in a modal or dedicated section
+            });
+
+            socket.on('user_groups', (data) => {
+                if (data.groups) {
+                    displayGroups(data.groups);
+                }
+            });
+
+            socket.on('group_members', (data) => {
+                if (data.members) {
+                    currentGroupMembers = data.members;
+                    displayMembers(data.members);
+                }
+            });
+
+            socket.on('member_left_group', (data) => {
+                showStatus('members-status', `Member ${data.username} left the group`, 'info');
+                if (currentGroupId === data.group_id) {
+                    getGroupMembers(); // Refresh member list
+                }
+            });
+
+            socket.on('error', (data) => {
+                showStatus('chat-status', 'Error: ' + data.error, 'error');
+            });
+        }
+
+        function showStatus(elementId, message, type) {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<div class="status ${type}">${message}</div>`;
+        }
+
+        async function login() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const response = await fetch('/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    authToken = data.access_token;
+                    showStatus('auth-status', 'Login successful!', 'success');
+
+                    // Authenticate with Socket.IO
+                    socket.emit('authenticate', {
+                        token: authToken,
+                        username: email
+                    });
+                } else {
+                    showStatus('auth-status', 'Login failed: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showStatus('auth-status', 'Login error: ' + error.message, 'error');
+            }
+        }
+
+        async function register() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const username = email.split('@')[0];
+
+            try {
+                const response = await fetch('/auth/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email,
+                        password,
+                        username
+                    })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    showStatus('auth-status', 'Registration successful! Please login.', 'success');
+                } else {
+                    showStatus('auth-status', 'Registration failed: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showStatus('auth-status', 'Registration error: ' + error.message, 'error');
+            }
+        }
+
+        function createGroup() {
+            if (!socket || !socket.connected) {
+                showStatus('group-status', 'Not connected to server', 'error');
+                return;
+            }
+
+            const name = document.getElementById('groupName').value.trim();
+            const description = document.getElementById('groupDescription').value.trim();
+            const memberIds = document.getElementById('memberIds').value.split(',').map(id => id.trim()).filter(id => id);
+
+            if (!name) {
+                showStatus('group-status', 'Please enter a group name', 'error');
+                return;
+            }
+
+            socket.emit('create_group', {
+                name: name,
+                description: description,
+                member_ids: memberIds
+            });
+
+            // Clear form
+            document.getElementById('groupName').value = '';
+            document.getElementById('groupDescription').value = '';
+            document.getElementById('memberIds').value = '';
+        }
+
+        function getUserGroups() {
+            if (!socket || !socket.connected) {
+                showStatus('group-status', 'Not connected to server', 'error');
+                return;
+            }
+
+            // Request user groups via socket.io
+            socket.emit('get_user_groups');
+        }
+
+        function displayGroups(groups) {
+            const groupList = document.getElementById('groupList');
+            groupList.innerHTML = '';
+
+            groups.forEach(group => {
+                const groupItem = document.createElement('div');
+                groupItem.className = 'group-item';
+                groupItem.innerHTML = `
+                    <span>${group.name}</span>
+                    <div class="group-actions">
+                        <button onclick="deleteGroup('${group.id}')" class="danger">Delete</button>
+                    </div>
+                `;
+                groupItem.onclick = (e) => {
+                    if (!e.target.closest('.group-actions')) {
+                        // Update active state
+                        document.querySelectorAll('.group-item').forEach(item => item.classList.remove('active'));
+                        groupItem.classList.add('active');
+                        
+                        // Join the group
+                        joinGroup(group.id);
+                    }
+                };
+                groupList.appendChild(groupItem);
+            });
+        }
+
+        function deleteGroup(groupId) {
+            if (!socket || !socket.connected) {
+                showStatus('group-status', 'Not connected to server', 'error');
+                return;
+            }
+
+            if (!confirm('Are you sure you want to delete this group?')) {
+                return;
+            }
+
+            socket.emit('delete_group', {
+                group_id: groupId
+            });
+        }
+
+        function updateGroup() {
+            if (!socket || !socket.connected) {
+                showStatus('group-status', 'Not connected to server', 'error');
+                return;
+            }
+
+            const groupId = document.getElementById('groupId').value.trim();
+            const name = document.getElementById('newGroupName').value.trim();
+            const description = document.getElementById('newGroupDescription').value.trim();
+
+            if (!groupId) {
+                showStatus('group-status', 'Please enter a group ID', 'error');
+                return;
+            }
+
+            if (!name && !description) {
+                showStatus('group-status', 'Please enter at least one field to update', 'error');
+                return;
+            }
+
+            socket.emit('update_group', {
+                group_id: groupId,
+                name: name || undefined,
+                description: description || undefined
+            });
+        }
+
+        function getGroupInfo() {
+            if (!socket || !socket.connected) {
+                showStatus('group-status', 'Not connected to server', 'error');
+                return;
+            }
+
+            const groupId = document.getElementById('groupId').value.trim();
+
+            if (!groupId) {
+                showStatus('group-status', 'Please enter a group ID', 'error');
+                return;
+            }
+
+            socket.emit('get_group_info', {
+                group_id: groupId
+            });
+        }
+
+        function joinGroup(groupId) {
+            if (!socket || !socket.connected) {
+                showStatus('chat-status', 'Not connected to server', 'error');
+                return;
+            }
+
+            // Set current group ID
+            currentGroupId = groupId;
+
+            socket.emit('join_group', {
+                group_id: groupId
+            });
+        }
+
+        function getGroupMembers() {
+            if (!socket || !socket.connected) {
+                showStatus('members-status', 'Not connected to server', 'error');
+                return;
+            }
+
+            if (!currentGroupId) {
+                showStatus('members-status', 'Please select a group first', 'error');
+                return;
+            }
+
+            // Request group members via socket.io
+            socket.emit('get_group_members', {
+                group_id: currentGroupId
+            });
+        }
+
+        function displayMembers(members) {
+            const memberList = document.getElementById('memberList');
+            memberList.innerHTML = '';
+
+            members.forEach(member => {
+                const memberItem = document.createElement('div');
+                memberItem.className = 'member-item';
+                memberItem.innerHTML = `
+                    <div>
+                        <strong>${member.username || member.user_id}</strong>
+                        <div class="member-role">${member.role}</div>
+                    </div>
+                    <div class="member-actions">
+                        <button onclick="removeMember('${member.user_id}')" class="danger">Remove</button>
+                    </div>
+                `;
+                memberList.appendChild(memberItem);
+            });
+        }
+
+        function addMember() {
+            if (!socket || !socket.connected) {
+                showStatus('members-status', 'Not connected to server', 'error');
+                return;
+            }
+
+            if (!currentGroupId) {
+                showStatus('members-status', 'Please select a group first', 'error');
+                return;
+            }
+
+            const memberId = document.getElementById('memberId').value.trim();
+            const memberRole = document.getElementById('memberRole').value;
+
+            if (!memberId) {
+                showStatus('members-status', 'Please enter a user ID', 'error');
+                return;
+            }
+
+            socket.emit('add_group_member', {
+                group_id: currentGroupId,
+                user_id: memberId,
+                role: memberRole
+            });
+
+            document.getElementById('memberId').value = '';
+        }
+
+        function removeMember(memberId) {
+            if (!socket || !socket.connected) {
+                showStatus('members-status', 'Not connected to server', 'error');
+                return;
+            }
+
+            if (!currentGroupId) {
+                showStatus('members-status', 'Please select a group first', 'error');
+                return;
+            }
+
+            if (!confirm('Are you sure you want to remove this member?')) {
+                return;
+            }
+
+            socket.emit('remove_group_member', {
+                group_id: currentGroupId,
+                user_id: memberId
+            });
+        }
+
+        function changeMemberRole() {
+            if (!socket || !socket.connected) {
+                showStatus('members-status', 'Not connected to server', 'error');
+                return;
+            }
+
+            if (!currentGroupId) {
+                showStatus('members-status', 'Please select a group first', 'error');
+                return;
+            }
+
+            const memberId = document.getElementById('memberId').value.trim();
+            const newRole = document.getElementById('memberRole').value;
+
+            if (!memberId) {
+                showStatus('members-status', 'Please enter a user ID', 'error');
+                return;
+            }
+
+            socket.emit('change_member_role', {
+                group_id: currentGroupId,
+                user_id: memberId,
+                role: newRole
+            });
+
+            document.getElementById('memberId').value = '';
+        }
+
+        function exitGroup() {
+            if (!socket || !socket.connected) {
+                showStatus('members-status', 'Not connected to server', 'error');
+                return;
+            }
+
+            if (!currentGroupId) {
+                showStatus('members-status', 'Please select a group first', 'error');
+                return;
+            }
+
+            if (!confirm('Are you sure you want to exit this group?')) {
+                return;
+            }
+
+            // Leave the group via socket.io
+            socket.emit('leave_group', {
+                group_id: currentGroupId
+            });
+
+            // Clear current group state
+            currentGroupId = null;
+            currentGroupMembers = [];
+
+            // Clear UI
+            document.getElementById('chatMessages').innerHTML = '';
+            document.getElementById('memberList').innerHTML = '';
+
+            // Remove active state from group items
+            document.querySelectorAll('.group-item').forEach(item => item.classList.remove('active'));
+
+            // Refresh group list
+            getUserGroups();
+        }
+
+        function sendGroupMessage() {
+            if (!socket || !socket.connected) {
+                showStatus('chat-status', 'Not connected to server', 'error');
+                return;
+            }
+
+            if (!currentGroupId) {
+                showStatus('chat-status', 'Please join a group first', 'error');
+                return;
+            }
+
+            const messageInput = document.getElementById('messageInput');
+            const content = messageInput.value.trim();
+
+            if (!content) {
+                showStatus('chat-status', 'Please enter a message', 'error');
+                return;
+            }
+
+            // For testing, we'll use plain text instead of encrypted content
+            socket.emit('send_group_message', {
+                group_id: currentGroupId,
+                encrypted_content: content,
+                message_type: 'text'
+            });
+
+            messageInput.value = '';
+        }
+
+        function displayMessages(messages) {
+            const chatMessages = document.getElementById('chatMessages');
+            chatMessages.innerHTML = '';
+
+            messages.forEach(message => {
+                addMessage(message, 'received');
+            });
+        }
+
+        function addMessage(message, type) {
+            const chatMessages = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+
+            const timestamp = new Date(message.timestamp * 1000).toLocaleTimeString();
+            messageDiv.innerHTML = `
+                <strong>${message.sender_username || 'Unknown'}</strong> 
+                <small>${timestamp}</small><br>
+                ${message.encrypted_content}
+            `;
+
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        // Initialize when page loads
+        window.onload = function () {
+            initSocket();
+        };
+    </script>
+</body>
+
+</html>

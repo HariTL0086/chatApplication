@@ -32,6 +32,7 @@ type DatabaseConfig struct {
 	SSLMode  string
 }
 
+
 // JWTConfig holds JWT-related configuration
 type JWTConfig struct {
 	Secret           string

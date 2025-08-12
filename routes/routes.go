@@ -2,6 +2,7 @@ package routes
 
 import (
 	"Chat_App/handlers"
+	"Chat_App/internal/middleware"
 	"Chat_App/internal/repository"
 	"Chat_App/internal/services"
 	"Chat_App/internal/socket"
@@ -11,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRoutes(authService *services.AuthService, userRepo *repository.UserRepo, chatService *services.ChatService) *gin.Engine {
+func SetupRoutes(authService *services.AuthService, userRepo *repository.UserRepo, chatService *services.ChatService, groupService *services.GroupService) *gin.Engine {
     r := gin.Default()
 
     r.GET("/test-chat", func(c *gin.Context) {
@@ -22,10 +23,19 @@ func SetupRoutes(authService *services.AuthService, userRepo *repository.UserRep
         c.File(filePath)
     })
 
-    socketManager := socket.NewSocketManager(authService, chatService)
+    r.GET("/test-group", func(c *gin.Context) {
+        log.Printf("Test-group route accessed")
+        // Use absolute path to ensure file is found
+        filePath := filepath.Join("/home/tl0086/Project/ChatApplication", "group_test.html")
+        log.Printf("Attempting to serve file: %s", filePath)
+        c.File(filePath)
+    })
+
+    socketManager := socket.NewSocketManager(authService, chatService, groupService)
 
     authHandler := handlers.NewAuthHandler(authService)
     chatHandler := handlers.NewChatHandler(chatService, authService)
+    groupHandler := handlers.NewGroupHandler(groupService)
 
     auth := r.Group("/auth")
     {
@@ -42,6 +52,22 @@ func SetupRoutes(authService *services.AuthService, userRepo *repository.UserRep
         chat.GET("/conversations", chatHandler.GetUserConversations)
         chat.GET("/conversations/:conversation_id/messages", chatHandler.GetConversationMessages)
         chat.POST("/start", chatHandler.StartChat)
+    }
+
+    // Group routes (protected by auth middleware)
+    groups := r.Group("/groups")
+    groups.Use(middleware.AuthMiddleware(authService))
+    {
+        groups.POST("/", groupHandler.CreateGroup)
+        groups.GET("/", groupHandler.GetUserGroups)
+        groups.GET("/:id", groupHandler.GetGroup)
+        groups.PUT("/:id", groupHandler.UpdateGroup)
+        groups.DELETE("/:id", groupHandler.DeleteGroup)
+        groups.GET("/:id/members", groupHandler.GetGroupMembers)
+        groups.POST("/:id/members", groupHandler.AddGroupMember)
+        groups.DELETE("/:id/members", groupHandler.RemoveGroupMember)
+        groups.PUT("/:id/members/role", groupHandler.ChangeMemberRole)
+        groups.POST("/:id/leave", groupHandler.LeaveGroup)
     }
     
     r.Any("/socket.io/*any", func(c *gin.Context) {
