@@ -2,6 +2,7 @@ package socket
 
 import (
 	"Chat_App/internal/services"
+	"context"
 	"encoding/json"
 	"log"
 	"strings"
@@ -14,16 +15,13 @@ import (
 	"github.com/zishang520/socket.io/v2/socket"
 )
 
-// ===== TYPES AND STRUCTURES =====
-
-// AuthenticatedClient represents an authenticated socket client
 type AuthenticatedClient struct {
     UserID   uuid.UUID
     Username string
     SocketID socket.SocketId
 }
 
-// ChatMessage represents a chat message for socket emission
+
 type ChatMessage struct {
 	ID               string `json:"id"`
 	SenderID         string `json:"sender_id"`
@@ -35,7 +33,7 @@ type ChatMessage struct {
 	ConversationID   string `json:"conversation_id"`
 }
 
-// GroupMessage represents a group message for socket emission
+
 type GroupMessage struct {
 	ID               string `json:"id"`
 	SenderID         string `json:"sender_id"`
@@ -48,14 +46,14 @@ type GroupMessage struct {
 	ConversationID   string `json:"conversation_id"`
 }
 
-// GroupMember represents a group member for socket emission
+
 type GroupMember struct {
 	UserID   string `json:"user_id"`
 	Role     string `json:"role"`
 	JoinedAt int64  `json:"joined_at"`
 }
 
-// GroupInfo represents group information for socket emission
+
 type GroupInfo struct {
 	GroupID    string         `json:"group_id"`
 	Name       string         `json:"name"`
@@ -66,21 +64,19 @@ type GroupInfo struct {
 	Members    []GroupMember  `json:"members"`
 }
 
-// ===== GLOBAL VARIABLES =====
+var authenticatedClients sync.Map 
 
-// Global variable for authenticated clients
-var authenticatedClients sync.Map // map[socket.SocketId]*AuthenticatedClient
 
-// SocketManager manages the main socket connection and coordinates handlers
 type SocketManager struct {
 	io              *socket.Server
 	authService     *services.AuthService
+	redisService    *services.RedisService
 	chatHandler     *ChatSocketHandler
 	groupHandler    *GroupSocketHandler
 }
 
-// NewSocketManager creates a new socket manager with separate handlers
-func NewSocketManager(authService *services.AuthService, chatService *services.ChatService, groupService *services.GroupService) *SocketManager {
+
+func NewSocketManager(authService *services.AuthService, chatService *services.ChatService, groupService *services.GroupService, redisService *services.RedisService) *SocketManager {
     httpServer := types.CreateServer(nil)
     options := socket.DefaultServerOptions()
 
@@ -94,7 +90,7 @@ func NewSocketManager(authService *services.AuthService, chatService *services.C
     options.SetPingInterval(25 * time.Second)
     options.SetPingTimeout(20 * time.Second)
 
-    // Configure transports - both websocket and polling
+    
     transports := types.NewSet[string]()
     transports.Add("websocket")
     transports.Add("polling")
@@ -102,13 +98,14 @@ func NewSocketManager(authService *services.AuthService, chatService *services.C
 
     io := socket.NewServer(httpServer, options)
 
-	// Create separate handlers
-	chatHandler := NewChatSocketHandler(chatService, io)
-	groupHandler := NewGroupSocketHandler(groupService, chatService, io)
+	
+	chatHandler := NewChatSocketHandler(chatService, io, redisService)
+	groupHandler := NewGroupSocketHandler(groupService, chatService, io, redisService)
 
     sm := &SocketManager{
 		io:           io,
 		authService:  authService,
+		redisService: redisService,
 		chatHandler:  chatHandler,
 		groupHandler: groupHandler,
     }
@@ -117,23 +114,57 @@ func NewSocketManager(authService *services.AuthService, chatService *services.C
     return sm
 }
 
-// setupEventHandlers sets up the main connection handler and delegates to specific handlers
+
 func (sm *SocketManager) setupEventHandlers() {
     sm.io.On("connection", func(clients ...any) {
         client := clients[0].(*socket.Socket)
         log.Printf("Client connected: %s", client.Id())
 
-        // Handle authentication
+       
         client.On("authenticate", sm.handleAuthentication(client))
         
-		// Setup chat handlers
+	
 		sm.chatHandler.SetupChatHandlers(client)
 		
-		// Setup group handlers
+	
 		sm.groupHandler.SetupGroupHandlers(client)
 
         client.On("disconnect", func(...any) {
             log.Printf("Client disconnected: %s", client.Id())
+            
+            
+            if authClient, exists := authenticatedClients.Load(client.Id()); exists {
+                if user, ok := authClient.(*AuthenticatedClient); ok {
+                    if err := sm.redisService.SetUserOffline(user.UserID); err != nil {
+                        log.Printf("Failed to set user offline: %v", err)
+                    }
+                    
+                    
+                    relevantUserIDs, err := sm.getRelevantUserIDs(user.UserID)
+                    if err != nil {
+                        log.Printf("Failed to get relevant user IDs for %s: %v", user.UserID.String(), err)
+                        
+                        sm.io.Emit("user_status_change", map[string]interface{}{
+                            "user_id": user.UserID.String(),
+                            "username": user.Username,
+                            "status": "offline",
+                            "last_seen": time.Now().Unix(),
+                        })
+                        return
+                    }
+                    
+                
+                    if len(relevantUserIDs) > 0 {
+                        sm.emitStatusChangeToUsers(relevantUserIDs, map[string]interface{}{
+                            "user_id": user.UserID.String(),
+                            "username": user.Username,
+                            "status": "offline",
+                            "last_seen": time.Now().Unix(),
+                        })
+                    }
+                }
+            }
+            
             authenticatedClients.Delete(client.Id())
         })
 
@@ -143,7 +174,7 @@ func (sm *SocketManager) setupEventHandlers() {
     })
 }
 
-// handleAuthentication handles socket authentication
+
 func (sm *SocketManager) handleAuthentication(client *socket.Socket) func(...any) {
     return func(data ...any) {
         log.Printf("Authentication attempt from client %s with %d data items", client.Id(), len(data))
@@ -253,7 +284,7 @@ func (sm *SocketManager) handleAuthentication(client *socket.Socket) func(...any
             return
         }
 
-        // Clean up token (remove extra quotes if present)
+    
         token, exists := authData["token"].(string)
         if !exists {
             errorResponse := map[string]interface{}{
@@ -267,7 +298,7 @@ func (sm *SocketManager) handleAuthentication(client *socket.Socket) func(...any
             return
         }
 
-        // Clean up token - remove extra quotes
+ 
         token = strings.Trim(token, `"`)
         log.Printf("Cleaned token: %s", token)
 
@@ -301,8 +332,40 @@ func (sm *SocketManager) handleAuthentication(client *socket.Socket) func(...any
         }
         authenticatedClients.Store(client.Id(), authClient)
 
-        // Auto-join user to their existing conversations
+     
+        if err := sm.redisService.SetUserOnline(userID, username, string(client.Id())); err != nil {
+            log.Printf("Failed to set user online: %v", err)
+        }
+
+     
+        relevantUserIDs, err := sm.getRelevantUserIDs(userID)
+        if err != nil {
+            log.Printf("Failed to get relevant user IDs for %s: %v", userID.String(), err)
+         
+            sm.io.Emit("user_status_change", map[string]interface{}{
+                "user_id": userID.String(),
+                "username": username,
+                "status": "online",
+                "last_seen": time.Now().Unix(),
+            })
+        } else {
+         
+            if len(relevantUserIDs) > 0 {
+                sm.emitStatusChangeToUsers(relevantUserIDs, map[string]interface{}{
+                    "user_id": userID.String(),
+                    "username": username,
+                    "status": "online",
+                    "last_seen": time.Now().Unix(),
+                })
+            }
+        }
+
+     
 		sm.chatHandler.autoJoinUserToConversations(client, userID)
+
+     
+		sm.chatHandler.DeliverOfflineMessages(client, userID)
+		sm.groupHandler.DeliverOfflineGroupMessages(client, userID)
 
         log.Printf("User authenticated: %s (%s)", username, userID.String())
         log.Printf("Sending auth_success to client %s", client.Id())
@@ -320,7 +383,7 @@ func (sm *SocketManager) handleAuthentication(client *socket.Socket) func(...any
     }
 }
 
-// getAuthenticatedClient retrieves an authenticated client by socket ID
+
 func getAuthenticatedClient(socketID socket.SocketId) (*AuthenticatedClient, bool) {
     if client, exists := authenticatedClients.Load(socketID); exists {
         return client.(*AuthenticatedClient), true
@@ -328,7 +391,96 @@ func getAuthenticatedClient(socketID socket.SocketId) (*AuthenticatedClient, boo
     return nil, false
 }
 
-// ServeHTTP handles HTTP requests for the socket server
+
+func (sm *SocketManager) getRelevantUserIDs(userID uuid.UUID) ([]string, error) {
+    var relevantUserIDs []string
+    ctx := context.Background()
+    
+
+    conversations, err := sm.chatHandler.chatService.GetUserConversations(ctx, userID)
+    if err != nil {
+        log.Printf("Failed to get conversations for user %s: %v", userID.String(), err)
+        return nil, err
+    }
+    
+   
+    for _, conversation := range conversations {
+        if conversation.Type == "private" {
+            participants, err := sm.chatHandler.chatService.GetConversationParticipants(ctx, conversation.ID)
+            if err != nil {
+                log.Printf("Failed to get participants for conversation %s: %v", conversation.ID.String(), err)
+                continue
+            }
+            
+            for _, participantID := range participants {
+                if participantID != userID {
+                    relevantUserIDs = append(relevantUserIDs, participantID.String())
+                }
+            }
+        }
+    }
+    
+
+    groups, err := sm.groupHandler.groupService.GetUserGroups(ctx, userID)
+    if err != nil {
+        log.Printf("Failed to get groups for user %s: %v", userID.String(), err)
+       
+    } else {
+        for _, group := range groups {
+            members, err := sm.groupHandler.groupService.GetGroupMembers(ctx, group.ID)
+            if err != nil {
+                log.Printf("Failed to get members for group %s: %v", group.ID.String(), err)
+                continue
+            }
+            
+            for _, member := range members {
+                if member.UserID != userID {
+                    relevantUserIDs = append(relevantUserIDs, member.UserID.String())
+                }
+            }
+        }
+    }
+    
+    
+    uniqueIDs := make(map[string]bool)
+    var uniqueRelevantUserIDs []string
+    for _, id := range relevantUserIDs {
+        if !uniqueIDs[id] {
+            uniqueIDs[id] = true
+            uniqueRelevantUserIDs = append(uniqueRelevantUserIDs, id)
+        }
+    }
+    
+    return uniqueRelevantUserIDs, nil
+}
+
+
+func (sm *SocketManager) emitStatusChangeToUsers(userIDs []string, statusData map[string]interface{}) {
+
+    var targetSocketIDs []string
+    
+    authenticatedClients.Range(func(key, value interface{}) bool {
+        if authClient, ok := value.(*AuthenticatedClient); ok {
+            for _, userID := range userIDs {
+                if authClient.UserID.String() == userID {
+                    targetSocketIDs = append(targetSocketIDs, string(authClient.SocketID))
+                    break
+                }
+            }
+        }
+        return true
+    })
+    
+ 
+    for _, socketID := range targetSocketIDs {
+        sm.io.To(socket.Room(socketID)).Emit("user_status_change", statusData)
+    }
+    
+    log.Printf("Emitted status change for user %s to %d relevant users", 
+        statusData["user_id"], len(targetSocketIDs))
+}
+
+
 func (sm *SocketManager) ServeHTTP(c *gin.Context) {
     log.Printf("Socket.IO request: %s %s", c.Request.Method, c.Request.URL.Path)
     log.Printf("Request headers: %v", c.Request.Header)
@@ -337,7 +489,12 @@ func (sm *SocketManager) ServeHTTP(c *gin.Context) {
     handler.ServeHTTP(c.Writer, c.Request)
 }
 
-// GetIO returns the socket.io server instance
+
 func (sm *SocketManager) GetIO() *socket.Server {
     return sm.io
+}
+
+
+func (sm *SocketManager) GetRedisService() *services.RedisService {
+    return sm.redisService
 }

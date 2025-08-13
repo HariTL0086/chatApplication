@@ -5,6 +5,7 @@ import (
 	"Chat_App/internal/database"
 	"Chat_App/internal/repository"
 	"Chat_App/internal/services"
+	"Chat_App/internal/socket"
 	"Chat_App/routes"
 	"log"
 )
@@ -26,9 +27,15 @@ func main() {
 	defer db.Close()
 
 	// Connect to Redis using config
-	
-
-	
+	redisService, err := services.NewRedisService(
+		cfg.GetRedisAddress(),
+		cfg.Redis.Password,
+		cfg.Redis.DB,
+	)
+	if err != nil {
+		log.Fatalf("Failed to connect to Redis: %v", err)
+	}
+	defer redisService.Close()
 	
 	// Run migrations
 	if err := db.AutoMigrate(); err != nil {
@@ -44,7 +51,11 @@ func main() {
 	authService := services.NewAuthService(userRepo, refreshTokenRepo, cfg)
 	chatService := services.NewChatService(chatRepo, userRepo)
 	groupService := services.NewGroupService(groupRepo, userRepo, chatRepo)
-	r := routes.SetupRoutes(authService, userRepo, chatService, groupService)
+	
+	// Create socket manager with Redis service
+	socketManager := socket.NewSocketManager(authService, chatService, groupService, redisService)
+	
+	r := routes.SetupRoutes(authService, userRepo, chatService, groupService, socketManager)
 
 	log.Printf("Server is running on %s", cfg.GetServerAddress())
 	

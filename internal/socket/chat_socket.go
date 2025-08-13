@@ -9,32 +9,34 @@ import (
 	"github.com/zishang520/socket.io/v2/socket"
 )
 
-// ChatSocketHandler handles chat-related socket events
+
 type ChatSocketHandler struct {
 	chatService  *services.ChatService
 	io           *socket.Server
-
+	redisService *services.RedisService
 }
 
-// NewChatSocketHandler creates a new chat socket handler
-func NewChatSocketHandler(chatService *services.ChatService, io *socket.Server) *ChatSocketHandler {
+
+func NewChatSocketHandler(chatService *services.ChatService, io *socket.Server, redisService *services.RedisService) *ChatSocketHandler {
 	return &ChatSocketHandler{
 		chatService:  chatService,
 		io:           io,
-		
+		redisService: redisService,
 	}
 }
 
-// SetupChatHandlers sets up all chat-related socket event handlers
+
 func (csh *ChatSocketHandler) SetupChatHandlers(client *socket.Socket) {
 	client.On("start_chat", csh.handleStartChat(client))
 	client.On("join_conversation", csh.handleJoinConversation(client))
 	client.On("send_message", csh.handleSendMessage(client))
-
+	client.On("start_typing", csh.handleStartTyping(client))
+	client.On("stop_typing", csh.handleStopTyping(client))
+	client.On("get_typing_users", csh.handleGetTypingUsers(client))
 }
 
 
-// handleStartChat handles starting a new chat conversation
+
 func (csh *ChatSocketHandler) handleStartChat(client *socket.Socket) func(...any) {
 	return func(data ...any) {
 		authClient, authenticated := getAuthenticatedClient(client.Id())
@@ -45,7 +47,7 @@ func (csh *ChatSocketHandler) handleStartChat(client *socket.Socket) func(...any
 			return
 		}
 
-		// Parse start chat data
+	
 		if len(data) == 0 {
 			client.Emit("error", map[string]interface{}{
 				"error": "No chat data provided",
@@ -77,7 +79,7 @@ func (csh *ChatSocketHandler) handleStartChat(client *socket.Socket) func(...any
 			return
 		}
 
-		// Create or get conversation in database
+	
 		conversation, err := csh.chatService.StartChat(context.Background(), authClient.UserID, recipientID)
 		if err != nil {
 			log.Printf("Failed to create/get conversation: %v", err)
@@ -87,10 +89,9 @@ func (csh *ChatSocketHandler) handleStartChat(client *socket.Socket) func(...any
 			return
 		}
 
-		// Create conversation room name (consistent for both users)
 		roomName := createPrivateRoomName(authClient.UserID, recipientID)
 
-		// Join the room
+	
 		client.Join(socket.Room(roomName))
 
 		log.Printf("User %s started chat with %s (room: %s, conversation: %s)",
@@ -104,7 +105,7 @@ func (csh *ChatSocketHandler) handleStartChat(client *socket.Socket) func(...any
 	}
 }
 
-// handleJoinConversation handles joining a conversation room
+
 func (csh *ChatSocketHandler) handleJoinConversation(client *socket.Socket) func(...any) {
 	return func(data ...any) {
 		authClient, authenticated := getAuthenticatedClient(client.Id())
@@ -141,7 +142,7 @@ func (csh *ChatSocketHandler) handleJoinConversation(client *socket.Socket) func
 		client.Join(socket.Room(roomName))
 		log.Printf("User %s joined room: %s", authClient.UserID.String(), roomName)
 
-		// Get conversation from room name
+	
 		conversation, err := csh.chatService.GetConversationByRoomName(context.Background(), roomName)
 		if err != nil {
 			log.Printf("Failed to get conversation for room %s: %v", roomName, err)
@@ -151,14 +152,14 @@ func (csh *ChatSocketHandler) handleJoinConversation(client *socket.Socket) func
 			return
 		}
 
-		// Load recent messages (last 50 messages)
+
 		messages, err := csh.chatService.GetConversationMessages(context.Background(), conversation.ID, 50, 0)
 		if err != nil {
 			log.Printf("Failed to load messages for conversation %s: %v", conversation.ID.String(), err)
-			// Don't fail the join, just log the error
+			
 		}
 
-		// Convert messages to map format for socket emission
+
 		var messageList []map[string]interface{}
 		for _, msg := range messages {
 			messageList = append(messageList, map[string]interface{}{
@@ -180,7 +181,7 @@ func (csh *ChatSocketHandler) handleJoinConversation(client *socket.Socket) func
 	}
 }
 
-// handleSendMessage handles sending a message in a conversation
+
 func (csh *ChatSocketHandler) handleSendMessage(client *socket.Socket) func(...any) {
 	return func(data ...any) {
 		authClient, authenticated := getAuthenticatedClient(client.Id())
@@ -218,10 +219,10 @@ func (csh *ChatSocketHandler) handleSendMessage(client *socket.Socket) func(...a
 		}
 
 		if !typeExists {
-			messageType = "text" // default message type
+			messageType = "text"
 		}
 
-		// Get conversation from room name
+		
 		conversation, err := csh.chatService.GetConversationByRoomName(context.Background(), roomName)
 		if err != nil {
 			log.Printf("Failed to get conversation for room %s: %v", roomName, err)
@@ -231,7 +232,7 @@ func (csh *ChatSocketHandler) handleSendMessage(client *socket.Socket) func(...a
 			return
 		}
 
-		// Save message to database
+	
 		dbMessage, err := csh.chatService.SendMessage(context.Background(), authClient.UserID, conversation.ID, encryptedContent, messageType)
 		if err != nil {
 			log.Printf("Failed to save message to database: %v", err)
@@ -241,7 +242,7 @@ func (csh *ChatSocketHandler) handleSendMessage(client *socket.Socket) func(...a
 			return
 		}
 
-		// Create message object for socket emission
+		
 		message := map[string]interface{}{
 			"id":                dbMessage.ID.String(),
 			"sender_id":         authClient.UserID.String(),
@@ -253,14 +254,301 @@ func (csh *ChatSocketHandler) handleSendMessage(client *socket.Socket) func(...a
 			"conversation_id":   conversation.ID.String(),
 		}
 
-		// Send message to all users in the room
+		
+		participants, err := csh.chatService.GetConversationParticipants(context.Background(), conversation.ID)
+		if err != nil {
+			log.Printf("Failed to get conversation participants: %v", err)
+		
+		}
+
+	
+		var offlineRecipients []string
+		for _, participantID := range participants {
+			if participantID != authClient.UserID {
+				isOnline, err := csh.redisService.IsUserOnline(participantID.String())
+				if err != nil {
+					log.Printf("Failed to check online status for user %s: %v", participantID.String(), err)
+					
+					offlineRecipients = append(offlineRecipients, participantID.String())
+					continue
+				}
+
+				if !isOnline {
+					offlineRecipients = append(offlineRecipients, participantID.String())
+				}
+			}
+		}
+
+	
+		for _, recipientID := range offlineRecipients {
+			offlineMessage := &services.OfflineMessage{
+				ID:               dbMessage.ID.String(),
+				SenderID:         authClient.UserID.String(),
+				SenderUsername:   authClient.Username,
+				RecipientID:      recipientID,
+				EncryptedContent: encryptedContent,
+				MessageType:      messageType,
+				Timestamp:        dbMessage.CreatedAt,
+				Room:             roomName,
+				ConversationID:   conversation.ID.String(),
+				IsGroupMessage:   false,
+			}
+
+			if err := csh.redisService.StoreOfflineMessage(offlineMessage); err != nil {
+				log.Printf("Failed to store offline message for user %s: %v", recipientID, err)
+			} else {
+				log.Printf("Stored offline message for user %s", recipientID)
+			}
+		}
+
+
 		csh.io.To(socket.Room(roomName)).Emit("new_message", message)
 
-		log.Printf("Message sent by %s to room %s (saved to DB)", authClient.Username, roomName)
+
+		if err := csh.redisService.StopUserTyping(authClient.UserID.String(), roomName); err != nil {
+			log.Printf("Failed to stop typing status for user %s: %v", authClient.UserID.String(), err)
+		}
+
+	
+		typingEvent := map[string]interface{}{
+			"user_id":   authClient.UserID.String(),
+			"username":  authClient.Username,
+			"room":      roomName,
+			"is_typing": false,
+		}
+		client.To(socket.Room(roomName)).Emit("user_typing", typingEvent)
+
+		log.Printf("Message sent by %s to room %s (saved to DB, %d offline recipients)", 
+			authClient.Username, roomName, len(offlineRecipients))
 	}
 }
 
-// autoJoinUserToConversations automatically joins a user to their existing conversations
+func (csh *ChatSocketHandler) DeliverOfflineMessages(client *socket.Socket, userID uuid.UUID) {
+	
+	offlineMessages, err := csh.redisService.GetOfflineMessages(userID.String())
+	if err != nil {
+		log.Printf("Failed to get offline messages for user %s: %v", userID.String(), err)
+		return
+	}
+
+	if len(offlineMessages) == 0 {
+		return
+	}
+
+	
+	for _, msg := range offlineMessages {
+		if !msg.IsGroupMessage {
+			
+			message := map[string]interface{}{
+				"id":                msg.ID,
+				"sender_id":         msg.SenderID,
+				"sender_username":   msg.SenderUsername,
+				"encrypted_content": msg.EncryptedContent,
+				"message_type":      msg.MessageType,
+				"timestamp":         msg.Timestamp.Unix(),
+				"room":              msg.Room,
+				"conversation_id":   msg.ConversationID,
+				"is_offline_message": true,
+			}
+
+			client.Emit("offline_message", message)
+			log.Printf("Delivered offline message %s to user %s", msg.ID, userID.String())
+		}
+	}
+
+
+	if err := csh.redisService.ClearOfflineMessages(userID.String()); err != nil {
+		log.Printf("Failed to clear offline messages for user %s: %v", userID.String(), err)
+	} else {
+		log.Printf("Cleared %d offline messages for user %s", len(offlineMessages), userID.String())
+	}
+}
+
+func (csh *ChatSocketHandler) handleStartTyping(client *socket.Socket) func(...any) {
+	return func(data ...any) {
+		authClient, authenticated := getAuthenticatedClient(client.Id())
+		if !authenticated {
+			client.Emit("error", map[string]interface{}{
+				"error": "Please authenticate first",
+			})
+			return
+		}
+
+		if len(data) == 0 {
+			client.Emit("error", map[string]interface{}{
+				"error": "No typing data provided",
+			})
+			return
+		}
+
+		typingData, ok := data[0].(map[string]interface{})
+		if !ok {
+			client.Emit("error", map[string]interface{}{
+				"error": "Invalid typing data format",
+			})
+			return
+		}
+
+		roomName, exists := typingData["room"].(string)
+		if !exists {
+			client.Emit("error", map[string]interface{}{
+				"error": "Room is required",
+			})
+			return
+		}
+
+		// Set user as typing in Redis
+		err := csh.redisService.SetUserTyping(authClient.UserID.String(), authClient.Username, roomName)
+		if err != nil {
+			log.Printf("Failed to set user typing: %v", err)
+			client.Emit("error", map[string]interface{}{
+				"error": "Failed to set typing status",
+			})
+			return
+		}
+
+		// Notify other users in the room that this user is typing
+		typingEvent := map[string]interface{}{
+			"user_id":   authClient.UserID.String(),
+			"username":  authClient.Username,
+			"room":      roomName,
+			"is_typing": true,
+		}
+
+		// Emit to all users in the room except the sender
+		client.To(socket.Room(roomName)).Emit("user_typing", typingEvent)
+
+		log.Printf("User %s started typing in room %s", authClient.Username, roomName)
+	}
+}
+
+
+func (csh *ChatSocketHandler) handleStopTyping(client *socket.Socket) func(...any) {
+	return func(data ...any) {
+		authClient, authenticated := getAuthenticatedClient(client.Id())
+		if !authenticated {
+			client.Emit("error", map[string]interface{}{
+				"error": "Please authenticate first",
+			})
+			return
+		}
+
+		if len(data) == 0 {
+			client.Emit("error", map[string]interface{}{
+				"error": "No typing data provided",
+			})
+			return
+		}
+
+		typingData, ok := data[0].(map[string]interface{})
+		if !ok {
+			client.Emit("error", map[string]interface{}{
+				"error": "Invalid typing data format",
+			})
+			return
+		}
+
+		roomName, exists := typingData["room"].(string)
+		if !exists {
+			client.Emit("error", map[string]interface{}{
+				"error": "Room is required",
+			})
+			return
+		}
+
+		// Stop user typing in Redis
+		err := csh.redisService.StopUserTyping(authClient.UserID.String(), roomName)
+		if err != nil {
+			log.Printf("Failed to stop user typing: %v", err)
+			client.Emit("error", map[string]interface{}{
+				"error": "Failed to stop typing status",
+			})
+			return
+		}
+
+		// Notify other users in the room that this user stopped typing
+		typingEvent := map[string]interface{}{
+			"user_id":   authClient.UserID.String(),
+			"username":  authClient.Username,
+			"room":      roomName,
+			"is_typing": false,
+		}
+
+		// Emit to all users in the room except the sender
+		client.To(socket.Room(roomName)).Emit("user_typing", typingEvent)
+
+		log.Printf("User %s stopped typing in room %s", authClient.Username, roomName)
+	}
+}
+
+
+func (csh *ChatSocketHandler) handleGetTypingUsers(client *socket.Socket) func(...any) {
+	return func(data ...any) {
+		authClient, authenticated := getAuthenticatedClient(client.Id())
+		if !authenticated {
+			client.Emit("error", map[string]interface{}{
+				"error": "Please authenticate first",
+			})
+			return
+		}
+
+		if len(data) == 0 {
+			client.Emit("error", map[string]interface{}{
+				"error": "No room data provided",
+			})
+			return
+		}
+
+		roomData, ok := data[0].(map[string]interface{})
+		if !ok {
+			client.Emit("error", map[string]interface{}{
+				"error": "Invalid room data format",
+			})
+			return
+		}
+
+		roomName, exists := roomData["room"].(string)
+		if !exists {
+			client.Emit("error", map[string]interface{}{
+				"error": "Room is required",
+			})
+			return
+		}
+
+		// Get typing users from Redis
+		typingUsers, err := csh.redisService.GetTypingUsers(roomName)
+		if err != nil {
+			log.Printf("Failed to get typing users: %v", err)
+			client.Emit("error", map[string]interface{}{
+				"error": "Failed to get typing users",
+			})
+			return
+		}
+
+		// Convert to map format for socket emission
+		var typingUsersList []map[string]interface{}
+		for _, user := range typingUsers {
+			// Don't include the current user in the list
+			if user.UserID != authClient.UserID.String() {
+				typingUsersList = append(typingUsersList, map[string]interface{}{
+					"user_id":   user.UserID,
+					"username":  user.Username,
+					"room":      user.Room,
+					"is_typing": user.IsTyping,
+				})
+			}
+		}
+
+		client.Emit("typing_users", map[string]interface{}{
+			"room":         roomName,
+			"typing_users": typingUsersList,
+		})
+
+		log.Printf("Sent typing users for room %s to user %s", roomName, authClient.Username)
+	}
+}
+
+
 func (csh *ChatSocketHandler) autoJoinUserToConversations(client *socket.Socket, userID uuid.UUID) {
 	conversations, err := csh.chatService.GetUserConversations(context.Background(), userID)
 	if err != nil {
@@ -295,14 +583,17 @@ func (csh *ChatSocketHandler) autoJoinUserToConversations(client *socket.Socket,
 	}
 }
 
-// createPrivateRoomName creates a consistent room name for private conversations
+
 func createPrivateRoomName(userID1, userID2 uuid.UUID) string {
-	// Create consistent room name regardless of user order
+	
 	if userID1.String() < userID2.String() {
 		return "private_" + userID1.String() + "_" + userID2.String()
 	}
 	return "private_" + userID2.String() + "_" + userID1.String()
 }
+
+
+
 
 
 

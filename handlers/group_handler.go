@@ -20,7 +20,7 @@ func NewGroupHandler(groupService *services.GroupService) *GroupHandler {
 	}
 }
 
-// CreateGroup creates a new group
+
 func (h *GroupHandler) CreateGroup(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
@@ -57,7 +57,7 @@ func (h *GroupHandler) CreateGroup(c *gin.Context) {
 	})
 }
 
-// GetGroup retrieves a group by ID
+
 func (h *GroupHandler) GetGroup(c *gin.Context) {
 	groupIDStr := c.Param("id")
 	groupID, err := uuid.FromString(groupIDStr)
@@ -80,7 +80,7 @@ func (h *GroupHandler) GetGroup(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"group": group})
 }
 
-// GetUserGroups retrieves all groups for the authenticated user
+
 func (h *GroupHandler) GetUserGroups(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
@@ -103,7 +103,7 @@ func (h *GroupHandler) GetUserGroups(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"groups": groups})
 }
 
-// AddGroupMember adds a user to a group (admin only)
+
 func (h *GroupHandler) AddGroupMember(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
@@ -148,7 +148,7 @@ func (h *GroupHandler) AddGroupMember(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Member added successfully"})
 }
 
-// RemoveGroupMember removes a user from a group (admin only)
+
 func (h *GroupHandler) RemoveGroupMember(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
@@ -193,7 +193,7 @@ func (h *GroupHandler) RemoveGroupMember(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Member removed successfully"})
 }
 
-// ChangeMemberRole changes a member's role (admin only)
+
 func (h *GroupHandler) ChangeMemberRole(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
@@ -236,7 +236,7 @@ func (h *GroupHandler) ChangeMemberRole(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Role changed successfully"})
 }
 
-// UpdateGroup updates group information (admin only)
+
 func (h *GroupHandler) UpdateGroup(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
@@ -283,7 +283,7 @@ func (h *GroupHandler) UpdateGroup(c *gin.Context) {
 	})
 }
 
-// GetGroupMembers retrieves all members of a group
+
 func (h *GroupHandler) GetGroupMembers(c *gin.Context) {
 	groupIDStr := c.Param("id")
 	groupID, err := uuid.FromString(groupIDStr)
@@ -306,7 +306,7 @@ func (h *GroupHandler) GetGroupMembers(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"members": members})
 }
 
-// DeleteGroup deletes a group (admin only)
+
 func (h *GroupHandler) DeleteGroup(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
@@ -343,7 +343,7 @@ func (h *GroupHandler) DeleteGroup(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Group deleted successfully"})
 }
 
-// LeaveGroup allows a user to leave a group
+
 func (h *GroupHandler) LeaveGroup(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
@@ -364,14 +364,14 @@ func (h *GroupHandler) LeaveGroup(c *gin.Context) {
 		return
 	}
 
-	// Add debug logging
+	
 	log.Printf("LeaveGroup: User %s attempting to leave group %s", userUUID.String(), groupID.String())
 
 	err = h.groupService.LeaveGroup(c.Request.Context(), userUUID, groupID)
 	if err != nil {
 		log.Printf("LeaveGroup error: %v, error type: %T", err, err)
 		
-		// Use error string comparison for more reliable error handling
+		
 		errorStr := err.Error()
 		switch {
 		case errorStr == services.ErrMemberNotFound.Error():

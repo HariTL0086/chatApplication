@@ -7,35 +7,16 @@ import (
 	"Chat_App/internal/services"
 	"Chat_App/internal/socket"
 	"log"
-	"path/filepath"
 
 	"github.com/gin-gonic/gin"
 )
-
-func SetupRoutes(authService *services.AuthService, userRepo *repository.UserRepo, chatService *services.ChatService, groupService *services.GroupService) *gin.Engine {
+func SetupRoutes(authService *services.AuthService, userRepo *repository.UserRepo, chatService *services.ChatService, groupService *services.GroupService, socketManager *socket.SocketManager) *gin.Engine {
     r := gin.Default()
-
-    r.GET("/test-chat", func(c *gin.Context) {
-        log.Printf("Test-chat route accessed")
-        // Use absolute path to ensure file is found
-        filePath := filepath.Join("/home/tl0086/Project/ChatApplication", "test.html")
-        log.Printf("Attempting to serve file: %s", filePath)
-        c.File(filePath)
-    })
-
-    r.GET("/test-group", func(c *gin.Context) {
-        log.Printf("Test-group route accessed")
-        // Use absolute path to ensure file is found
-        filePath := filepath.Join("/home/tl0086/Project/ChatApplication", "group_test.html")
-        log.Printf("Attempting to serve file: %s", filePath)
-        c.File(filePath)
-    })
-
-    socketManager := socket.NewSocketManager(authService, chatService, groupService)
 
     authHandler := handlers.NewAuthHandler(authService)
     chatHandler := handlers.NewChatHandler(chatService, authService)
     groupHandler := handlers.NewGroupHandler(groupService)
+
 
     auth := r.Group("/auth")
     {
@@ -54,7 +35,50 @@ func SetupRoutes(authService *services.AuthService, userRepo *repository.UserRep
         chat.POST("/start", chatHandler.StartChat)
     }
 
-    // Group routes (protected by auth middleware)
+   
+    status := r.Group("/status")
+    status.Use(middleware.AuthMiddleware(authService))
+    {
+        status.GET("/online", func(c *gin.Context) {
+            onlineUsers, err := socketManager.GetRedisService().GetOnlineUsers()
+            if err != nil {
+                c.JSON(500, gin.H{"error": "Failed to get online users"})
+                return
+            }
+            c.JSON(200, gin.H{"online_users": onlineUsers})
+        })
+        
+        status.GET("/user/:user_id", func(c *gin.Context) {
+            userID := c.Param("user_id")
+            userStatus, err := socketManager.GetRedisService().GetUserStatus(userID)
+            if err != nil {
+                c.JSON(500, gin.H{"error": "Failed to get user status"})
+                return
+            }
+            c.JSON(200, gin.H{"user_status": userStatus})
+        })
+
+        status.POST("/users", func(c *gin.Context) {
+            var request struct {
+                UserIDs []string `json:"user_ids" binding:"required"`
+            }
+            
+            if err := c.ShouldBindJSON(&request); err != nil {
+                c.JSON(400, gin.H{"error": "Invalid request format"})
+                return
+            }
+            
+            usersStatus, err := socketManager.GetRedisService().GetUsersStatus(request.UserIDs)
+            if err != nil {
+                c.JSON(500, gin.H{"error": "Failed to get users status"})
+                return
+            }
+            
+            c.JSON(200, gin.H{"users_status": usersStatus})
+        })
+    }
+
+    
     groups := r.Group("/groups")
     groups.Use(middleware.AuthMiddleware(authService))
     {
@@ -69,6 +93,8 @@ func SetupRoutes(authService *services.AuthService, userRepo *repository.UserRep
         groups.PUT("/:id/members/role", groupHandler.ChangeMemberRole)
         groups.POST("/:id/leave", groupHandler.LeaveGroup)
     }
+
+ 
     
     r.Any("/socket.io/*any", func(c *gin.Context) {
         log.Printf("Socket.IO route hit: %s %s", c.Request.Method, c.Request.URL.String())

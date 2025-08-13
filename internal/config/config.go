@@ -11,6 +11,7 @@ import (
 type Config struct {
 	Server   ServerConfig
 	Database DatabaseConfig
+	Redis    RedisConfig
 	JWT      JWTConfig
 }
 
@@ -40,6 +41,14 @@ type JWTConfig struct {
 	RefreshTokenTTL  time.Duration
 }
 
+// RedisConfig holds Redis-related configuration
+type RedisConfig struct {
+	Host     string
+	Port     string
+	Password string
+	DB       int
+}
+
 // Load loads configuration from environment variables
 func Load() (*Config, error) {
 	config := &Config{
@@ -57,9 +66,15 @@ func Load() (*Config, error) {
 			DBName:   getEnv("DB_NAME", "chatapp"),
 			SSLMode:  getEnv("DB_SSLMODE", "disable"),
 		},
+		Redis: RedisConfig{
+			Host:     getEnv("REDIS_HOST", "localhost"),
+			Port:     getEnv("REDIS_PORT", "6379"),
+			Password: getEnv("REDIS_PASSWORD", ""),
+			DB:       getEnvAsInt("REDIS_DB", 0),
+		},
 		JWT: JWTConfig{
-			Secret:          getEnv("JWT_SECRET", "your-secret-key-change-in-production"),
-			AccessTokenTTL:  getEnvAsDuration("JWT_ACCESS_TOKEN_TTL", 15*time.Minute),
+			Secret:          getEnv("JWT_SECRET", "chatApplication"),
+			AccessTokenTTL:  getEnvAsDuration("JWT_ACCESS_TOKEN_TTL", 100*time.Minute),
 			RefreshTokenTTL: getEnvAsDuration("JWT_REFRESH_TOKEN_TTL", 7*24*time.Hour),
 		},
 	}
@@ -67,7 +82,6 @@ func Load() (*Config, error) {
 	return config, nil
 }
 
-// GetDatabaseURL returns the database connection string
 func (c *Config) GetDatabaseURL() string {
 	return fmt.Sprintf("postgresql://%s:%s@%s:%s/%s?sslmode=%s",
 		c.Database.User,
@@ -79,12 +93,17 @@ func (c *Config) GetDatabaseURL() string {
 	)
 }
 
-// GetServerAddress returns the server address for binding
+
 func (c *Config) GetServerAddress() string {
 	return fmt.Sprintf("%s:%s", c.Server.Host, c.Server.Port)
 }
 
-// Helper function to get environment variable with default
+
+func (c *Config) GetRedisAddress() string {
+	return fmt.Sprintf("%s:%s", c.Redis.Host, c.Redis.Port)
+}
+
+
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
@@ -92,7 +111,7 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
-// Helper function to get environment variable as duration
+
 func getEnvAsDuration(key string, defaultValue time.Duration) time.Duration {
 	if value := os.Getenv(key); value != "" {
 		if duration, err := time.ParseDuration(value); err == nil {
@@ -102,7 +121,7 @@ func getEnvAsDuration(key string, defaultValue time.Duration) time.Duration {
 	return defaultValue
 }
 
-// Helper function to get environment variable as int
+
 func getEnvAsInt(key string, defaultValue int) int {
 	if value := os.Getenv(key); value != "" {
 		if intValue, err := strconv.Atoi(value); err == nil {
@@ -112,7 +131,7 @@ func getEnvAsInt(key string, defaultValue int) int {
 	return defaultValue
 }
 
-// Helper function to get environment variable as bool
+
 func getEnvAsBool(key string, defaultValue bool) bool {
 	if value := os.Getenv(key); value != "" {
 		if boolValue, err := strconv.ParseBool(value); err == nil {

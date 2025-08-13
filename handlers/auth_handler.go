@@ -85,7 +85,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		return
 	}
 
-	// Hash the refresh token
+	
 	hash := sha256.Sum256([]byte(req.RefreshToken))
 	tokenHash := hex.EncodeToString(hash[:])
 
@@ -105,7 +105,7 @@ func (h *AuthHandler) LogoutByEmail(c *gin.Context) {
 		return
 	}
 
-	// Delete the refresh token from database by email
+
 	if err := h.authService.LogoutByEmail(c.Request.Context(), req.Email); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

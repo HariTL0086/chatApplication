@@ -42,7 +42,7 @@ func (r *ChatRepository) GetConversationByID(ctx context.Context, id uuid.UUID) 
 func (r *ChatRepository) GetConversationByParticipants(ctx context.Context, userID1, userID2 uuid.UUID) (*models.Conversation, error) {
 	var conversation models.Conversation
 
-	// Try to find existing conversation
+
 	result := r.db.WithContext(ctx).
 		Joins("JOIN conversation_participants cp1 ON conversations.id = cp1.conversation_id").
 		Joins("JOIN conversation_participants cp2 ON conversations.id = cp2.conversation_id").
@@ -51,7 +51,7 @@ func (r *ChatRepository) GetConversationByParticipants(ctx context.Context, user
 
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-			// Create new conversation
+		
 			conversation = models.Conversation{
 				ID:        uuid.Must(uuid.NewV4()),
 				Type:      "private",
@@ -63,7 +63,7 @@ func (r *ChatRepository) GetConversationByParticipants(ctx context.Context, user
 				return nil, err
 			}
 
-			// Add participants using GORM associations
+			
 			var users []models.User
 			r.db.WithContext(ctx).Where("id IN ?", []uuid.UUID{userID1, userID2}).Find(&users)
 			r.db.WithContext(ctx).Model(&conversation).Association("Participants").Append(users)
@@ -82,7 +82,6 @@ func (r *ChatRepository) SaveMessage(ctx context.Context, message *models.Messag
 		return result.Error
 	}
 
-	// Update conversation's last_message_at
 	r.db.WithContext(ctx).
 		Model(&models.Conversation{}).
 		Where("id = ?", message.ConversationID).
@@ -108,7 +107,7 @@ func (r *ChatRepository) GetMessagesByConversation(ctx context.Context, conversa
 		return nil, result.Error
 	}
 
-	// Convert to pointers
+
 	var messagePtrs []*models.Message
 	for i := range messages {
 		messagePtrs = append(messagePtrs, &messages[i])
@@ -144,7 +143,7 @@ func (r *ChatRepository) GetUserConversations(ctx context.Context, userID uuid.U
 		return nil, result.Error
 	}
 
-	// Convert to pointers
+	
 	var conversationPtrs []*models.Conversation
 	for i := range conversations {
 		conversationPtrs = append(conversationPtrs, &conversations[i])
@@ -181,7 +180,7 @@ func (r *ChatRepository) UpdateMessageStatus(ctx context.Context, messageID uuid
 	return result.Error
 }
 
-// GetConversationByGroupID retrieves a conversation for a group
+
 func (r *ChatRepository) GetConversationByGroupID(ctx context.Context, groupID uuid.UUID) (*models.Conversation, error) {
 	var conversation models.Conversation
 	result := r.db.WithContext(ctx).
@@ -198,28 +197,28 @@ func (r *ChatRepository) GetConversationByGroupID(ctx context.Context, groupID u
 	return &conversation, nil
 }
 
-// DeleteConversationByGroupID deletes a conversation associated with a group
+
 func (r *ChatRepository) DeleteConversationByGroupID(ctx context.Context, groupID uuid.UUID) error {
 	// First delete all messages in the conversation
 	var conversation models.Conversation
 	if err := r.db.WithContext(ctx).Where("group_id = ? AND type = ?", groupID, "group").First(&conversation).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil // No conversation to delete
+			return nil 
 		}
 		return err
 	}
 
-	// Delete messages first (due to foreign key constraints)
+
 	if err := r.db.WithContext(ctx).Where("conversation_id = ?", conversation.ID).Delete(&models.Message{}).Error; err != nil {
 		return err
 	}
 
-	// Delete conversation participants from the junction table
+
 	if err := r.db.WithContext(ctx).Exec("DELETE FROM conversation_participants WHERE conversation_id = ?", conversation.ID).Error; err != nil {
 		return err
 	}
 
-	// Finally delete the conversation
+
 	if err := r.db.WithContext(ctx).Delete(&conversation).Error; err != nil {
 		return err
 	}

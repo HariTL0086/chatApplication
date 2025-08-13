@@ -28,9 +28,9 @@ func NewChatService(chatRepo *repository.ChatRepository, userRepo *repository.Us
 	}
 }
 
-// StartChat creates or finds a conversation between two users
+
 func (s *ChatService) StartChat(ctx context.Context, userID1, userID2 uuid.UUID) (*models.Conversation, error) {
-	// Verify both users exist
+	
 	user1, err := s.userRepo.GetUserByID(ctx, userID1)
 	if err != nil {
 		return nil, err
@@ -47,7 +47,7 @@ func (s *ChatService) StartChat(ctx context.Context, userID1, userID2 uuid.UUID)
 		return nil, ErrUserNotFound
 	}
 
-	// Get or create conversation
+
 	conversation, err := s.chatRepo.GetConversationByParticipants(ctx, userID1, userID2)
 	if err != nil {
 		return nil, err
@@ -56,9 +56,9 @@ func (s *ChatService) StartChat(ctx context.Context, userID1, userID2 uuid.UUID)
 	return conversation, nil
 }
 
-// SendMessage saves a message to the database
+
 func (s *ChatService) SendMessage(ctx context.Context, senderID, conversationID uuid.UUID, encryptedContent, messageType string) (*models.Message, error) {
-	// Verify sender exists
+	
 	sender, err := s.userRepo.GetUserByID(ctx, senderID)
 	if err != nil {
 		return nil, err
@@ -67,7 +67,7 @@ func (s *ChatService) SendMessage(ctx context.Context, senderID, conversationID 
 		return nil, ErrUserNotFound
 	}
 
-	// Create message
+	
 	message := &models.Message{
 		ID:               uuid.Must(uuid.NewV4()),
 		ConversationID:   conversationID,
@@ -78,7 +78,7 @@ func (s *ChatService) SendMessage(ctx context.Context, senderID, conversationID 
 		MessageStatus:    "sent",
 	}
 
-	// Save to database
+
 	if err := s.chatRepo.SaveMessage(ctx, message); err != nil {
 		return nil, err
 	}
@@ -86,14 +86,14 @@ func (s *ChatService) SendMessage(ctx context.Context, senderID, conversationID 
 	return message, nil
 }
 
-// GetConversationMessages retrieves messages for a conversation
+
 func (s *ChatService) GetConversationMessages(ctx context.Context, conversationID uuid.UUID, limit, offset int) ([]*models.Message, error) {
 	return s.chatRepo.GetMessagesByConversation(ctx, conversationID, limit, offset)
 }
 
-// GetUserConversations retrieves all conversations for a user
+
 func (s *ChatService) GetUserConversations(ctx context.Context, userID uuid.UUID) ([]*models.Conversation, error) {
-	// Verify user exists
+	
 	user, err := s.userRepo.GetUserByID(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -105,7 +105,7 @@ func (s *ChatService) GetUserConversations(ctx context.Context, userID uuid.UUID
 	return s.chatRepo.GetUserConversations(ctx, userID)
 }
 
-// GetConversationParticipants retrieves all participant IDs for a conversation
+
 func (s *ChatService) GetConversationParticipants(ctx context.Context, conversationID uuid.UUID) ([]uuid.UUID, error) {
 	return s.chatRepo.GetConversationParticipants(ctx, conversationID)
 }
@@ -134,12 +134,12 @@ func (s *ChatService) GetConversationByRoomName(ctx context.Context, roomName st
 	return s.chatRepo.GetConversationByParticipants(ctx, userID1, userID2)
 }
 
-// GetConversationByGroupID retrieves a conversation for a group
+
 func (s *ChatService) GetConversationByGroupID(ctx context.Context, groupID uuid.UUID) (*models.Conversation, error) {
 	return s.chatRepo.GetConversationByGroupID(ctx, groupID)
 }
 
-// DeleteConversationByGroupID deletes a conversation associated with a group
+
 func (s *ChatService) DeleteConversationByGroupID(ctx context.Context, groupID uuid.UUID) error {
 	return s.chatRepo.DeleteConversationByGroupID(ctx, groupID)
 } 

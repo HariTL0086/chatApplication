@@ -82,14 +82,14 @@ func (h *ChatHandler) GetConversationMessages(c *gin.Context) {
 }
 
 func (h *ChatHandler) StartChat(c *gin.Context) {
-	// Get user ID from token
+
 	userID, err := h.getUserIDFromToken(c)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
 		return
 	}
 
-	// Get recipient ID from request body
+	
 	var req struct {
 		RecipientID string `json:"recipient_id" binding:"required"`
 	}

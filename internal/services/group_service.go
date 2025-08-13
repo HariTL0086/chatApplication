@@ -92,18 +92,16 @@ func (s *GroupService) CreateGroup(ctx context.Context, creatorID uuid.UUID, req
 
 	return group, nil
 }
-
-// GetGroup retrieves a group by ID
 func (s *GroupService) GetGroup(ctx context.Context, groupID uuid.UUID) (*models.Group, error) {
 	return s.groupRepo.GetGroupByID(ctx, groupID)
 }
 
-// GetUserGroups retrieves all groups a user is a member of
+
 func (s *GroupService) GetUserGroups(ctx context.Context, userID uuid.UUID) ([]*models.Group, error) {
 	return s.groupRepo.GetUserGroups(ctx, userID)
 }
 
-// AddGroupMember adds a user to a group (admin only)
+
 func (s *GroupService) AddGroupMember(ctx context.Context, adminID, groupID uuid.UUID, req *models.AddGroupMemberRequest) error {
 	// Verify admin is actually an admin of the group
 	isAdmin, err := s.groupRepo.IsGroupAdmin(ctx, groupID, adminID)
@@ -130,9 +128,9 @@ func (s *GroupService) AddGroupMember(ctx context.Context, adminID, groupID uuid
 	return s.groupRepo.AddGroupMember(ctx, groupID, userID, req.Role)
 }
 
-// RemoveGroupMember removes a user from a group (admin only)
+
 func (s *GroupService) RemoveGroupMember(ctx context.Context, adminID, groupID uuid.UUID, req *models.RemoveGroupMemberRequest) error {
-	// Verify admin is actually an admin of the group
+	
 	isAdmin, err := s.groupRepo.IsGroupAdmin(ctx, groupID, adminID)
 	if err != nil {
 		return err
@@ -141,17 +139,17 @@ func (s *GroupService) RemoveGroupMember(ctx context.Context, adminID, groupID u
 		return ErrNotGroupAdmin
 	}
 
-	// Parse user ID
+
 	userID, err := uuid.FromString(req.UserID)
 	if err != nil {
 		return ErrUserNotFound
 	}
 
-	// Remove member
+	
 	return s.groupRepo.RemoveGroupMember(ctx, groupID, userID)
 }
 
-// ChangeMemberRole changes a member's role (admin only)
+
 func (s *GroupService) ChangeMemberRole(ctx context.Context, adminID, groupID uuid.UUID, req *models.ChangeMemberRoleRequest) error {
 	// Verify admin is actually an admin of the group
 	isAdmin, err := s.groupRepo.IsGroupAdmin(ctx, groupID, adminID)
@@ -172,9 +170,9 @@ func (s *GroupService) ChangeMemberRole(ctx context.Context, adminID, groupID uu
 	return s.groupRepo.UpdateMemberRole(ctx, groupID, userID, req.Role)
 }
 
-// UpdateGroup updates group information (admin only)
+
 func (s *GroupService) UpdateGroup(ctx context.Context, adminID, groupID uuid.UUID, req *models.UpdateGroupRequest) (*models.Group, error) {
-	// Verify admin is actually an admin of the group
+	
 	isAdmin, err := s.groupRepo.IsGroupAdmin(ctx, groupID, adminID)
 	if err != nil {
 		return nil, err
@@ -183,13 +181,13 @@ func (s *GroupService) UpdateGroup(ctx context.Context, adminID, groupID uuid.UU
 		return nil, ErrNotGroupAdmin
 	}
 
-	// Get current group
+
 	group, err := s.groupRepo.GetGroupByID(ctx, groupID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Update fields
+	
 	if req.Name != "" {
 		group.Name = req.Name
 	}
@@ -198,7 +196,7 @@ func (s *GroupService) UpdateGroup(ctx context.Context, adminID, groupID uuid.UU
 	}
 	group.UpdatedAt = time.Now()
 
-	// Save changes
+	
 	if err := s.groupRepo.UpdateGroup(ctx, group); err != nil {
 		return nil, err
 	}
@@ -206,24 +204,23 @@ func (s *GroupService) UpdateGroup(ctx context.Context, adminID, groupID uuid.UU
 	return group, nil
 }
 
-// GetGroupMembers retrieves all members of a group
+
 func (s *GroupService) GetGroupMembers(ctx context.Context, groupID uuid.UUID) ([]*models.GroupMember, error) {
 	return s.groupRepo.GetGroupMembers(ctx, groupID)
 }
 
-// IsGroupMember checks if a user is a member of a group
+
 func (s *GroupService) IsGroupMember(ctx context.Context, groupID, userID uuid.UUID) (bool, error) {
 	return s.groupRepo.IsGroupMember(ctx, groupID, userID)
 }
 
-// IsGroupAdmin checks if a user is an admin of a group
 func (s *GroupService) IsGroupAdmin(ctx context.Context, groupID, userID uuid.UUID) (bool, error) {
 	return s.groupRepo.IsGroupAdmin(ctx, groupID, userID)
 }
 
-// DeleteGroup deletes a group (admin only)
+
 func (s *GroupService) DeleteGroup(ctx context.Context, adminID, groupID uuid.UUID) error {
-	// Verify admin is actually an admin of the group
+	
 	isAdmin, err := s.groupRepo.IsGroupAdmin(ctx, groupID, adminID)
 	if err != nil {
 		return err
@@ -232,7 +229,7 @@ func (s *GroupService) DeleteGroup(ctx context.Context, adminID, groupID uuid.UU
 		return ErrNotGroupAdmin
 	}
 
-	// Start a database transaction to ensure data consistency
+	
 	tx := s.groupRepo.GetDB().WithContext(ctx).Begin()
 	if tx.Error != nil {
 		return tx.Error
@@ -243,25 +240,24 @@ func (s *GroupService) DeleteGroup(ctx context.Context, adminID, groupID uuid.UU
 		}
 	}()
 
-	// Delete the group conversation first (this will cascade to messages and participants)
+
 	if err := s.chatRepo.DeleteConversationByGroupID(ctx, groupID); err != nil {
 		tx.Rollback()
 		return err
 	}
 
-	// Delete all group members
+
 	if err := s.groupRepo.DeleteAllGroupMembers(ctx, groupID); err != nil {
 		tx.Rollback()
 		return err
 	}
 
-	// Finally delete the group
 	if err := s.groupRepo.DeleteGroup(ctx, groupID); err != nil {
 		tx.Rollback()
 		return err
 	}
 
-	// Commit the transaction
+
 	if err := tx.Commit().Error; err != nil {
 		return err
 	}
@@ -269,9 +265,9 @@ func (s *GroupService) DeleteGroup(ctx context.Context, adminID, groupID uuid.UU
 	return nil
 }
 
-// LeaveGroup allows a user to leave a group
+
 func (s *GroupService) LeaveGroup(ctx context.Context, userID, groupID uuid.UUID) error {
-	// Check if user is a member of the group
+
 	isMember, err := s.groupRepo.IsGroupMember(ctx, groupID, userID)
 	if err != nil {
 		return err
@@ -280,7 +276,7 @@ func (s *GroupService) LeaveGroup(ctx context.Context, userID, groupID uuid.UUID
 		return ErrMemberNotFound
 	}
 
-	// Remove the user from the group (the repository method handles admin checks)
+
 	err = s.groupRepo.RemoveGroupMember(ctx, groupID, userID)
 	if err != nil {
 		return err

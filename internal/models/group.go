@@ -6,7 +6,7 @@ import (
 	"github.com/gofrs/uuid"
 )
 
-// Group represents a group chat
+
 type Group struct {
 	ID          uuid.UUID  `json:"id" gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
 	Name        string     `json:"name" gorm:"not null"`
@@ -20,7 +20,6 @@ type Group struct {
 	Conversation *Conversation `json:"conversation,omitempty" gorm:"foreignKey:GroupID"`
 }
 
-// GroupMember represents a member in a group
 type GroupMember struct {
 	ID        uuid.UUID `json:"id" gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
 	GroupID   uuid.UUID `json:"group_id" gorm:"type:uuid;not null"`
@@ -33,7 +32,7 @@ type GroupMember struct {
 	User       User       `json:"user,omitempty" gorm:"foreignKey:UserID"`
 }
 
-// Request/Response models for group operations
+
 type CreateGroupRequest struct {
 	Name        string   `json:"name" binding:"required,min=1,max=100"`
 	Description string   `json:"description" binding:"max=500"`

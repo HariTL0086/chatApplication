@@ -14,7 +14,7 @@ type DB struct {
 	GormDB *gorm.DB
 }
 
-// NewDB creates a new database connection using GORM
+
 func NewDB(databaseURL string) (*DB, error) {
 	db, err := gorm.Open(postgres.Open(databaseURL), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info),
@@ -37,7 +37,7 @@ func NewDB(databaseURL string) (*DB, error) {
 	return &DB{GormDB: db}, nil
 }
 
-// Close closes the database connection
+
 func (db *DB) Close() {
 	if db.GormDB != nil {
 		sqlDB, err := db.GormDB.DB()
@@ -48,7 +48,7 @@ func (db *DB) Close() {
 	}
 }
 
-// Ping checks if the database is still connected
+
 func (db *DB) Ping() error {
 	sqlDB, err := db.GormDB.DB()
 	if err != nil {
@@ -57,12 +57,12 @@ func (db *DB) Ping() error {
 	return sqlDB.Ping()
 }
 
-// GetDB returns the underlying GORM DB instance
+
 func (db *DB) GetDB() *gorm.DB {
 	return db.GormDB
 }
 
-// AutoMigrate runs database migrations
+
 func (db *DB) AutoMigrate() error {
 	return db.GormDB.AutoMigrate(
 		&models.User{},
