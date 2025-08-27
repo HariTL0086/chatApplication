@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log"
 	"time"
 
@@ -21,13 +22,16 @@ type AuthService struct {
 	userRepo        *repository.UserRepo
 	refreshTokenRepo *repository.RefreshTokenRepository
 	config          *config.Config
+	cryptoService   *CryptoService
 }
 
 func NewAuthService(userRepo *repository.UserRepo, refreshTokenRepo *repository.RefreshTokenRepository, cfg *config.Config) *AuthService {
+	cryptoService, _ := NewCryptoService("keys")
 	return &AuthService{
 		userRepo:        userRepo,
 		refreshTokenRepo: refreshTokenRepo,
 		config:          cfg,
+		cryptoService:   cryptoService,
 	}
 }
 
@@ -51,16 +55,32 @@ func (s *AuthService) Register(ctx context.Context, req *models.RegisterRequest)
 		return nil, err
 	}
 
+	privateKey, publicKey, err := s.cryptoService.GenerateKeyPair()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate key pair: %w", err)
+	}
+
+	publicKeyString, err := s.cryptoService.PublicKeyToString(publicKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert public key to string: %w", err)
+	}
+
 	user := &models.User{
 		ID:        id,
 		Username:  req.Username,
 		Email:     req.Email,
 		Password:  string(hashedPassword),
+		PublicKey: publicKeyString,
 		CreatedAt: time.Now(),
 	}
 
 	if err := s.userRepo.CreateUser(ctx, user); err != nil {
 		return nil, err
+	}
+
+	if err := s.cryptoService.SavePrivateKey(user.ID, privateKey); err != nil {
+		log.Printf("Failed to save private key for user %s: %v", user.ID, err)
+		return nil, fmt.Errorf("failed to save private key: %w", err)
 	}
 
 	

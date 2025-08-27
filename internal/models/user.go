@@ -12,6 +12,7 @@ type User struct {
 	Username     string    `json:"username" gorm:"not null;unique"`
 	Email        string    `json:"email" gorm:"not null;unique"`
 	Password     string    `json:"-" gorm:"not null"`
+	PublicKey    string    `json:"public_key" gorm:"type:text"`
 	RefreshToken *string   `json:"-"`
 	CreatedAt    time.Time `json:"created_at" gorm:"not null"`
 	

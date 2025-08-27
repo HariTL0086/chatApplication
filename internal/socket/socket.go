@@ -360,6 +360,9 @@ func (sm *SocketManager) handleAuthentication(client *socket.Socket) func(...any
             }
         }
 
+        // Join user to their personal room for receiving decrypted messages
+        client.Join(socket.Room("user_" + userID.String()))
+
      
 		sm.chatHandler.autoJoinUserToConversations(client, userID)
 

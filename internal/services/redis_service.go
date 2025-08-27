@@ -523,6 +523,99 @@ func (rs *RedisService) CleanupExpiredTypingStatus() error {
 	return nil
 }
 
+type MessageStatusUpdate struct {
+	MessageID      string    `json:"message_id"`
+	SenderID       string    `json:"sender_id"`
+	RecipientID    string    `json:"recipient_id"`
+	Status         string    `json:"status"`
+	ConversationID string    `json:"conversation_id"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+func (rs *RedisService) TrackMessageStatus(update *MessageStatusUpdate) error {
+	ctx := context.Background()
+	
+	updateJSON, err := json.Marshal(update)
+	if err != nil {
+		return fmt.Errorf("failed to marshal message status update: %v", err)
+	}
+
+	// Store message status update
+	key := fmt.Sprintf("message_status:%s", update.MessageID)
+	err = rs.client.Set(ctx, key, updateJSON, 24*time.Hour).Err()
+	if err != nil {
+		return fmt.Errorf("failed to store message status: %v", err)
+	}
+
+	// Add to sender's status updates list for notifications
+	senderKey := fmt.Sprintf("status_updates:%s", update.SenderID)
+	err = rs.client.LPush(ctx, senderKey, updateJSON).Err()
+	if err != nil {
+		return fmt.Errorf("failed to add status update to sender list: %v", err)
+	}
+
+	// Limit list size and set expiration
+	rs.client.LTrim(ctx, senderKey, 0, 100) // Keep last 100 updates
+	rs.client.Expire(ctx, senderKey, 24*time.Hour)
+
+	return nil
+}
+
+func (rs *RedisService) GetMessageStatus(messageID string) (*MessageStatusUpdate, error) {
+	ctx := context.Background()
+	key := fmt.Sprintf("message_status:%s", messageID)
+
+	statusJSON, err := rs.client.Get(ctx, key).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, nil // No status found
+		}
+		return nil, fmt.Errorf("failed to get message status: %v", err)
+	}
+
+	var status MessageStatusUpdate
+	if err := json.Unmarshal([]byte(statusJSON), &status); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal message status: %v", err)
+	}
+
+	return &status, nil
+}
+
+func (rs *RedisService) GetUserStatusUpdates(userID string, limit int) ([]*MessageStatusUpdate, error) {
+	ctx := context.Background()
+	key := fmt.Sprintf("status_updates:%s", userID)
+
+	if limit <= 0 {
+		limit = 50
+	}
+
+	updatesJSON, err := rs.client.LRange(ctx, key, 0, int64(limit-1)).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return []*MessageStatusUpdate{}, nil
+		}
+		return nil, fmt.Errorf("failed to get status updates: %v", err)
+	}
+
+	var updates []*MessageStatusUpdate
+	for _, updateJSON := range updatesJSON {
+		var update MessageStatusUpdate
+		if err := json.Unmarshal([]byte(updateJSON), &update); err != nil {
+			log.Printf("Failed to unmarshal status update: %v", err)
+			continue
+		}
+		updates = append(updates, &update)
+	}
+
+	return updates, nil
+}
+
+func (rs *RedisService) ClearUserStatusUpdates(userID string) error {
+	ctx := context.Background()
+	key := fmt.Sprintf("status_updates:%s", userID)
+	return rs.client.Del(ctx, key).Err()
+}
+
 func (rs *RedisService) Close() error {
 	return rs.client.Close()
 }
