@@ -5,6 +5,7 @@ go 1.24.1
 toolchain go1.24.6
 
 require (
+	github.com/redis/go-redis/v9 v9.12.1
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/gorm v1.30.1
 )
@@ -38,7 +39,6 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/quic-go/quic-go v0.53.0 // indirect
-	github.com/redis/go-redis/v9 v9.12.1 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.0 // indirect
@@ -66,8 +66,8 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/zishang520/engine.io/v2 v2.5.0
-	github.com/zishang520/socket.io/v2 v2.5.0
-	golang.org/x/crypto v0.39.0
+	github.com/zishang520/socket.io/v2 v2.4.0
+	golang.org/x/crypto v0.39.0 // indirect
 	golang.org/x/sync v0.15.0 // indirect
 	golang.org/x/text v0.26.0 // indirect
 )

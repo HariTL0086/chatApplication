@@ -6,8 +6,6 @@ import (
 	"log"
 	"time"
 
-	"Chat_App/internal/models"
-
 	"github.com/gofrs/uuid"
 	"github.com/zishang520/socket.io/v2/socket"
 )
@@ -51,7 +49,6 @@ func (csh *ChatSocketHandler) handleStartChat(client *socket.Socket) func(...any
 			return
 		}
 
-	
 		if len(data) == 0 {
 			client.Emit("error", map[string]interface{}{
 				"error": "No chat data provided",
@@ -83,7 +80,16 @@ func (csh *ChatSocketHandler) handleStartChat(client *socket.Socket) func(...any
 			return
 		}
 
-	
+		// Get recipient user details
+		recipientUser, err := csh.chatService.GetUserByID(context.Background(), recipientID)
+		if err != nil {
+			log.Printf("Failed to get recipient user: %v", err)
+			client.Emit("error", map[string]interface{}{
+				"error": "Failed to get recipient details",
+			})
+			return
+		}
+
 		conversation, err := csh.chatService.StartChat(context.Background(), authClient.UserID, recipientID)
 		if err != nil {
 			log.Printf("Failed to create/get conversation: %v", err)
@@ -94,17 +100,22 @@ func (csh *ChatSocketHandler) handleStartChat(client *socket.Socket) func(...any
 		}
 
 		roomName := createPrivateRoomName(authClient.UserID, recipientID)
-
-	
 		client.Join(socket.Room(roomName))
 
 		log.Printf("User %s started chat with %s (room: %s, conversation: %s)",
 			authClient.UserID.String(), recipientID.String(), roomName, conversation.ID.String())
 
+		// Enhanced response with user details
 		client.Emit("chat_started", map[string]interface{}{
 			"room":            roomName,
 			"conversation_id": conversation.ID.String(),
 			"recipient_id":    recipientID.String(),
+			"recipient": map[string]interface{}{
+				"id":         recipientUser.ID.String(),
+				"username":   recipientUser.Username,
+				"email":      recipientUser.Email,
+				"photo_url":  recipientUser.PhotoURL,
+			},
 		})
 	}
 }
@@ -169,7 +180,7 @@ func (csh *ChatSocketHandler) handleJoinConversation(client *socket.Socket) func
 			messageList = append(messageList, map[string]interface{}{
 				"id":                msg.ID.String(),
 				"sender_id":         msg.SenderID.String(),
-				"decrypted_content": msg.EncryptedContent, // This now contains decrypted content
+				"content":           msg.Content, // This now contains the message content
 				"message_type":      msg.MessageType,
 				"timestamp":         msg.CreatedAt.Unix(),
 				"room":              roomName,
@@ -250,7 +261,7 @@ func (csh *ChatSocketHandler) handleGetDecryptedMessages(client *socket.Socket) 
 			messageList = append(messageList, map[string]interface{}{
 				"id":               msg.ID.String(),
 				"sender_id":        msg.SenderID.String(),
-				"decrypted_content": msg.EncryptedContent,
+				"content":          msg.Content,
 				"message_type":     msg.MessageType,
 				"timestamp":        msg.CreatedAt.Unix(),
 				"conversation_id":  conversationID.String(),
@@ -346,12 +357,12 @@ func (csh *ChatSocketHandler) handleSendMessage(client *socket.Socket) func(...a
 				if !isOnline {
 					offlineRecipients = append(offlineRecipients, participantID.String())
 				} else {
-					// Send decrypted message to online user
+					// Send message to online user
 					decryptedContent, err := csh.chatService.DecryptMessage(context.Background(), dbMessage, participantID)
 					if err != nil {
-						log.Printf("Failed to decrypt message for user %s: %v", participantID.String(), err)
-						// Send encrypted message if decryption fails
-						decryptedContent = dbMessage.EncryptedContent
+						log.Printf("Failed to get message content for user %s: %v", participantID.String(), err)
+						// Send original message if processing fails
+						decryptedContent = dbMessage.Content
 					}
 
 					decryptedMessage := map[string]interface{}{
@@ -398,7 +409,7 @@ func (csh *ChatSocketHandler) handleSendMessage(client *socket.Socket) func(...a
 				SenderID:         authClient.UserID.String(),
 				SenderUsername:   authClient.Username,
 				RecipientID:      recipientID,
-				EncryptedContent: dbMessage.EncryptedContent,
+				Content:          dbMessage.Content,
 				MessageType:      messageType,
 				Timestamp:        dbMessage.CreatedAt,
 				Room:             roomName,
@@ -413,12 +424,12 @@ func (csh *ChatSocketHandler) handleSendMessage(client *socket.Socket) func(...a
 			}
 		}
 
-		// Send encrypted message to sender (for their own record)
+		// Send message to sender (for their own record)
 		senderMessage := map[string]interface{}{
 			"id":                dbMessage.ID.String(),
 			"sender_id":         authClient.UserID.String(),
 			"sender_username":   authClient.Username,
-			"encrypted_content": dbMessage.EncryptedContent,
+			"content":           dbMessage.Content,
 			"message_type":      messageType,
 			"timestamp":         dbMessage.CreatedAt.Unix(),
 			"room":              roomName,
@@ -464,15 +475,8 @@ func (csh *ChatSocketHandler) DeliverOfflineMessages(client *socket.Socket, user
 	// Deliver offline messages
 	for _, msg := range offlineMessages {
 		if !msg.IsGroupMessage {
-			// Decrypt offline message for the user
-			decryptedContent, err := csh.chatService.DecryptMessage(context.Background(), &models.Message{
-				EncryptedContent: msg.EncryptedContent,
-			}, userID)
-			if err != nil {
-				log.Printf("Failed to decrypt offline message %s for user %s: %v", msg.ID, userID.String(), err)
-				// Send encrypted message if decryption fails
-				decryptedContent = msg.EncryptedContent
-			}
+			// Get content from offline message
+			decryptedContent := msg.Content
 
 			// Send decrypted offline message
 			message := map[string]interface{}{

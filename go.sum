@@ -1,5 +1,9 @@
 github.com/andybalholm/brotli v1.2.0 h1:ukwgCxwYrmACq68yiUqwIWnGY0cTPox/M94sVwToPjQ=
 github.com/andybalholm/brotli v1.2.0/go.mod h1:rzTDkvFWvIrjDXZHkuS16NPggd91W3kUSvPlQ1pLaKY=
+github.com/bsm/ginkgo/v2 v2.12.0 h1:Ny8MWAHyOepLGlLKYmXG4IEkioBysk6GpaRTLC8zwWs=
+github.com/bsm/ginkgo/v2 v2.12.0/go.mod h1:SwYbGRRDovPVboqFv0tPTcG1sN61LM1Z4ARdbAV9g4c=
+github.com/bsm/gomega v1.27.10 h1:yeMWxP2pV2fG3FgAODIY8EiRE3dy0aeFYt4l7wh6yKA=
+github.com/bsm/gomega v1.27.10/go.mod h1:JyEr/xRbxbtgWNi8tIEVPUYZ5Dzef52k01W3YH0H+O0=
 github.com/bytedance/sonic v1.13.3 h1:MS8gmaH16Gtirygw7jV91pDCN33NyMrPbN7qiYhEsF0=
 github.com/bytedance/sonic v1.13.3/go.mod h1:o68xyaF9u2gvVBuGHPlUVCy+ZfmNNO5ETf1+KgkJhz4=
 github.com/bytedance/sonic/loader v0.1.1/go.mod h1:ncP89zfokxS5LZrJxl5z0UJcsk4M4yY2JpfqGeCtNLU=
@@ -118,8 +122,8 @@ github.com/zishang520/engine.io/v2 v2.5.0 h1:0ayZCt51c8lntxG5AWoM2mX40ryZlvRodAU
 github.com/zishang520/engine.io/v2 v2.5.0/go.mod h1:ohfMsnzOCA9NEklEGiQ5Y9j6cWvzLNeVFaB+Bkn1KcQ=
 github.com/zishang520/socket.io-go-parser/v2 v2.5.0 h1:uGKTwcH2qrrs9uwzfCo3ems+qUJZo9beZLK8ZXOwKYo=
 github.com/zishang520/socket.io-go-parser/v2 v2.5.0/go.mod h1:GK9GIIs/KQbBKfnxgZJMBYSlsFemB2rL7EFUn0kmTfM=
-github.com/zishang520/socket.io/v2 v2.5.0 h1:+KdZLbl4wWVzyI84RG+h21t8OY4ifz/Oo6qwgt9zHl8=
-github.com/zishang520/socket.io/v2 v2.5.0/go.mod h1:+GyoPyakXDS6KsW81RAQpDA9+mJBXbcYcQ+Itx2D+rU=
+github.com/zishang520/socket.io/v2 v2.4.0 h1:F+U3JT4AAeTxRBUEXFHfC1WREZ64chXYuzoEBakt/4Q=
+github.com/zishang520/socket.io/v2 v2.4.0/go.mod h1:3USJLGzC6m5rXrhYIQBsXsT/hgipP4thabZWKr7WPXY=
 github.com/zishang520/webtransport-go v0.9.1 h1:Y3gqPM8cIDvQILsTyXJ5G9fp2PYqGqLI2z+QXpgboQc=
 github.com/zishang520/webtransport-go v0.9.1/go.mod h1:IgNAD6qLe3oWu7MSSkjusRNftpvjYxWjI4LmoH4VEyY=
 go.uber.org/mock v0.5.0 h1:KAMbZvZPyBPWgD14IrIQ38QCyjwpvVVV6K/bHl1IwQU=

@@ -133,7 +133,7 @@ func (gsh *GroupSocketHandler) handleJoinGroup(client *socket.Socket) func(...an
 			messageList = append(messageList, map[string]interface{}{
 				"id":               msg.ID.String(),
 				"sender_id":        msg.SenderID.String(),
-				"encrypted_content": msg.EncryptedContent,
+				"content":          msg.Content,
 				"message_type":     msg.MessageType,
 				"timestamp":        msg.CreatedAt.Unix(),
 				"room":            roomName,
@@ -242,12 +242,12 @@ func (gsh *GroupSocketHandler) handleSendGroupMessage(client *socket.Socket) fun
 		}
 
 		groupIDStr, groupExists := messageData["group_id"].(string)
-		encryptedContent, contentExists := messageData["encrypted_content"].(string)
+		content, contentExists := messageData["content"].(string)
 		messageType, typeExists := messageData["message_type"].(string)
 
 		if !groupExists || !contentExists {
 			client.Emit("error", map[string]interface{}{
-				"error": "Group ID and encrypted_content are required",
+				"error": "Group ID and content are required",
 			})
 			return
 		}
@@ -292,7 +292,7 @@ func (gsh *GroupSocketHandler) handleSendGroupMessage(client *socket.Socket) fun
 		}
 
 	
-		dbMessage, err := gsh.chatService.SendMessage(context.Background(), authClient.UserID, conversation.ID, encryptedContent, messageType)
+		dbMessage, err := gsh.chatService.SendMessage(context.Background(), authClient.UserID, conversation.ID, content, messageType)
 		if err != nil {
 			log.Printf("Failed to save group message to database: %v", err)
 			client.Emit("error", map[string]interface{}{
@@ -332,7 +332,7 @@ func (gsh *GroupSocketHandler) handleSendGroupMessage(client *socket.Socket) fun
 				SenderID:         authClient.UserID.String(),
 				SenderUsername:   authClient.Username,
 				GroupID:          groupID.String(),
-				EncryptedContent: encryptedContent,
+				Content:          content,
 				MessageType:      messageType,
 				Timestamp:        dbMessage.CreatedAt,
 				Room:             createGroupRoomName(groupID),
@@ -352,7 +352,7 @@ func (gsh *GroupSocketHandler) handleSendGroupMessage(client *socket.Socket) fun
 			"id":               dbMessage.ID.String(),
 			"sender_id":        authClient.UserID.String(),
 			"sender_username":  authClient.Username,
-			"encrypted_content": encryptedContent,
+			"content": content,
 			"message_type":     messageType,
 			"timestamp":        dbMessage.CreatedAt.Unix(),
 			"room":            roomName,
@@ -409,7 +409,7 @@ func (gsh *GroupSocketHandler) DeliverOfflineGroupMessages(client *socket.Socket
 				"id":                msg.ID,
 				"sender_id":         msg.SenderID,
 				"sender_username":   msg.SenderUsername,
-				"encrypted_content": msg.EncryptedContent,
+				"content": msg.Content,
 				"message_type":      msg.MessageType,
 				"timestamp":         msg.Timestamp.Unix(),
 				"room":              msg.Room,

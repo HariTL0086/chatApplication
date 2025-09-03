@@ -116,6 +116,199 @@ func (h *ChatHandler) StartChat(c *gin.Context) {
 	})
 }
 
+func (h *ChatHandler) GetChatHistory(c *gin.Context) {
+	userID, err := h.getUserIDFromToken(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+		return
+	}
+
+	conversationIDStr := c.Param("conversation_id")
+	conversationID, err := uuid.FromString(conversationIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid conversation ID"})
+		return
+	}
+
+	// Get pagination parameters
+	limitStr := c.DefaultQuery("limit", "50")
+	offsetStr := c.DefaultQuery("offset", "0")
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit <= 0 || limit > 100 {
+		limit = 50
+	}
+
+	offset, err := strconv.Atoi(offsetStr)
+	if err != nil || offset < 0 {
+		offset = 0
+	}
+
+	// Get decrypted messages for the user
+	messages, err := h.chatService.GetDecryptedMessages(c.Request.Context(), conversationID, userID, limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get chat history"})
+		return
+	}
+
+	// Format messages for response
+	var messageList []gin.H
+	for _, msg := range messages {
+		messageList = append(messageList, gin.H{
+			"id":               msg.ID.String(),
+			"sender_id":        msg.SenderID.String(),
+			"content":          msg.Content, // This now contains the actual message content
+			"message_type":     msg.MessageType,
+			"message_status":   msg.MessageStatus,
+			"timestamp":        msg.CreatedAt.Unix(),
+			"conversation_id":  conversationID.String(),
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"conversation_id": conversationID.String(),
+		"messages":        messageList,
+		"limit":           limit,
+		"offset":          offset,
+		"total":           len(messageList),
+	})
+}
+
+func (h *ChatHandler) GetChatHistoryWithUser(c *gin.Context) {
+	userID, err := h.getUserIDFromToken(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+		return
+	}
+
+	otherUserIDStr := c.Param("user_id")
+	otherUserID, err := uuid.FromString(otherUserIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	// Get or create conversation between these two users
+	conversation, err := h.chatService.StartChat(c.Request.Context(), userID, otherUserID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get conversation"})
+		return
+	}
+
+	// Get pagination parameters
+	limitStr := c.DefaultQuery("limit", "50")
+	offsetStr := c.DefaultQuery("offset", "0")
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit <= 0 || limit > 100 {
+		limit = 50
+	}
+
+	offset, err := strconv.Atoi(offsetStr)
+	if err != nil || offset < 0 {
+		offset = 0
+	}
+
+	// Get decrypted messages for the user
+	messages, err := h.chatService.GetDecryptedMessages(c.Request.Context(), conversation.ID, userID, limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get chat history"})
+		return
+	}
+
+	// Format messages for response
+	var messageList []gin.H
+	for _, msg := range messages {
+		messageList = append(messageList, gin.H{
+			"id":               msg.ID.String(),
+			"sender_id":        msg.SenderID.String(),
+			"content":          msg.Content, // This now contains the actual message content
+			"message_type":     msg.MessageType,
+			"message_status":   msg.MessageStatus,
+			"timestamp":        msg.CreatedAt.Unix(),
+			"conversation_id":  conversation.ID.String(),
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"conversation_id": conversation.ID.String(),
+		"conversation_type": "private",
+		"other_user_id":   otherUserID.String(),
+		"messages":        messageList,
+		"limit":           limit,
+		"offset":          offset,
+		"total":           len(messageList),
+	})
+}
+
+func (h *ChatHandler) GetGroupChatHistory(c *gin.Context) {
+	_, err := h.getUserIDFromToken(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+		return
+	}
+
+	groupIDStr := c.Param("group_id")
+	groupID, err := uuid.FromString(groupIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group ID"})
+		return
+	}
+
+	// Get conversation for the group
+	conversation, err := h.chatService.GetConversationByGroupID(c.Request.Context(), groupID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get group conversation"})
+		return
+	}
+
+	// Get pagination parameters
+	limitStr := c.DefaultQuery("limit", "50")
+	offsetStr := c.DefaultQuery("offset", "0")
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit <= 0 || limit > 100 {
+		limit = 50
+	}
+
+	offset, err := strconv.Atoi(offsetStr)
+	if err != nil || offset < 0 {
+		offset = 0
+	}
+
+	// Get messages for the group conversation
+	messages, err := h.chatService.GetConversationMessages(c.Request.Context(), conversation.ID, limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get group chat history"})
+		return
+	}
+
+	// Format messages for response
+	var messageList []gin.H
+	for _, msg := range messages {
+		messageList = append(messageList, gin.H{
+			"id":               msg.ID.String(),
+			"sender_id":        msg.SenderID.String(),
+			"content":          msg.Content, // This contains the message content
+			"message_type":     msg.MessageType,
+			"message_status":   msg.MessageStatus,
+			"timestamp":        msg.CreatedAt.Unix(),
+			"conversation_id":  conversation.ID.String(),
+			"group_id":         groupID.String(),
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"conversation_id": conversation.ID.String(),
+		"conversation_type": "group",
+		"group_id":        groupID.String(),
+		"messages":        messageList,
+		"limit":           limit,
+		"offset":          offset,
+		"total":           len(messageList),
+	})
+}
+
 
 func (h *ChatHandler) getUserIDFromToken(c *gin.Context) (uuid.UUID, error) {
 	authHeader := c.GetHeader("Authorization")

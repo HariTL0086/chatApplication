@@ -9,10 +9,10 @@ import (
 
 type User struct {
 	ID           uuid.UUID `json:"id" gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
-	Username     string    `json:"username" gorm:"not null;unique"`
+	Username     string    `json:"username" gorm:"not null;"`
 	Email        string    `json:"email" gorm:"not null;unique"`
-	Password     string    `json:"-" gorm:"not null"`
-	PublicKey    string    `json:"public_key" gorm:"type:text"`
+	FirebaseID   string    `json:"firebase_id" gorm:"not null;unique"`
+	PhotoURL     string    `json:"photo_url" gorm:"type:text"`
 	RefreshToken *string   `json:"-"`
 	CreatedAt    time.Time `json:"created_at" gorm:"not null"`
 	
@@ -27,16 +27,18 @@ func (User) TableName() string {
 }
 
 type RegisterRequest struct {
-	Username string `json:"username" binding:"required,min=3"`
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=6"`
+	Username   string `json:"username" binding:"required,min=3"`
+	Email      string `json:"email" binding:"required,email"`
+	FirebaseID string `json:"firebase_id" binding:"required"`
+	PhotoURL   string `json:"photo_url"`
 }
-
 
 type LoginRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required"`
+	FirebaseID string `json:"firebase_id" binding:"required"`
 }
+
+
+
 
 
 type AuthResponse struct {
@@ -59,21 +61,13 @@ func (RefreshToken) TableName() string {
 	return "refresh_tokens"
 }
 
-type RefreshTokenRequest struct {
-	RefreshToken string `json:"refresh_token" binding:"required"`
-}
 
 
-type RefreshTokenByEmailRequest struct {
-	Email string `json:"email" binding:"required,email"`
-}
 
 
-type LogoutRequest struct {
-	RefreshToken string `json:"refresh_token" binding:"required"`
-}
 
 
-type LogoutByEmailRequest struct {
-	Email string `json:"email" binding:"required,email"`
-}
+
+
+
+

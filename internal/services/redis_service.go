@@ -221,7 +221,7 @@ type OfflineMessage struct {
 	SenderUsername   string    `json:"sender_username"`
 	RecipientID      string    `json:"recipient_id"`
 	GroupID          string    `json:"group_id"`
-	EncryptedContent string    `json:"encrypted_content"`
+	Content          string    `json:"content"`
 	MessageType      string    `json:"message_type"`
 	Timestamp        time.Time `json:"timestamp"`
 	Room             string    `json:"room"`

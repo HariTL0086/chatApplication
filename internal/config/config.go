@@ -63,7 +63,7 @@ func Load() (*Config, error) {
 			Port:     getEnv("DB_PORT", "5432"),
 			User:     getEnv("DB_USER", "postgres"),
 			Password: getEnv("DB_PASSWORD", "postgres"),
-			DBName:   getEnv("DB_NAME", "chatapp"),
+			DBName:   getEnv("DB_NAME", "postgres"),
 			SSLMode:  getEnv("DB_SSLMODE", "disable"),
 		},
 		Redis: RedisConfig{

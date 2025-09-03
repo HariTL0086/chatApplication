@@ -26,7 +26,7 @@ type Message struct {
 	ID               uuid.UUID `json:"id" gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
 	ConversationID   uuid.UUID `json:"conversation_id" gorm:"type:uuid;not null"`
 	SenderID         uuid.UUID `json:"sender_id" gorm:"type:uuid;not null"`
-	EncryptedContent string    `json:"encrypted_content" gorm:"not null"`
+	Content          string    `json:"content" gorm:"not null"`
 	MessageType      string    `json:"message_type" gorm:"not null;default:'text'"`
 	MessageStatus    string    `json:"message_status" gorm:"not null;default:'sent'"`
 	CreatedAt        time.Time `json:"created_at" gorm:"not null"`
@@ -43,9 +43,9 @@ type StartChatRequest struct {
 }
 
 type SendMessageRequest struct {
-	ConversationID   uuid.UUID `json:"conversation_id"`
-	EncryptedContent string    `json:"encrypted_content"`
-	MessageType      string    `json:"message_type"`
+	ConversationID uuid.UUID `json:"conversation_id"`
+	Content        string    `json:"content"`
+	MessageType    string    `json:"message_type"`
 }
 
 type JoinRoomRequest struct {

@@ -1,6 +1,9 @@
 package services
 
 import (
+	"Chat_App/internal/config"
+	"Chat_App/internal/models"
+	"Chat_App/internal/repository"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -9,32 +12,23 @@ import (
 	"log"
 	"time"
 
-	"Chat_App/internal/config"
-	models "Chat_App/internal/models"
-	"Chat_App/internal/repository"
-
 	"github.com/gofrs/uuid"
 	"github.com/golang-jwt/jwt/v5"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type AuthService struct {
-	userRepo        *repository.UserRepo
+	userRepo         *repository.UserRepo
 	refreshTokenRepo *repository.RefreshTokenRepository
-	config          *config.Config
-	cryptoService   *CryptoService
+	config           *config.Config
 }
 
 func NewAuthService(userRepo *repository.UserRepo, refreshTokenRepo *repository.RefreshTokenRepository, cfg *config.Config) *AuthService {
-	cryptoService, _ := NewCryptoService("keys")
 	return &AuthService{
-		userRepo:        userRepo,
+		userRepo:         userRepo,
 		refreshTokenRepo: refreshTokenRepo,
-		config:          cfg,
-		cryptoService:   cryptoService,
+		config:           cfg,
 	}
 }
-
 
 func (s *AuthService) Register(ctx context.Context, req *models.RegisterRequest) (*models.AuthResponse, error) {
 	exists, err := s.userRepo.CheckEmailExists(ctx, req.Email)
@@ -45,9 +39,13 @@ func (s *AuthService) Register(ctx context.Context, req *models.RegisterRequest)
 		return nil, errors.New("email already exists")
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	// Check if Firebase ID already exists
+	exists, err = s.userRepo.CheckFirebaseIDExists(ctx, req.FirebaseID)
 	if err != nil {
 		return nil, err
+	}
+	if exists {
+		return nil, errors.New("firebase ID already exists")
 	}
 
 	id, err := uuid.NewV4()
@@ -55,65 +53,16 @@ func (s *AuthService) Register(ctx context.Context, req *models.RegisterRequest)
 		return nil, err
 	}
 
-	privateKey, publicKey, err := s.cryptoService.GenerateKeyPair()
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate key pair: %w", err)
-	}
-
-	publicKeyString, err := s.cryptoService.PublicKeyToString(publicKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert public key to string: %w", err)
-	}
-
 	user := &models.User{
-		ID:        id,
-		Username:  req.Username,
-		Email:     req.Email,
-		Password:  string(hashedPassword),
-		PublicKey: publicKeyString,
-		CreatedAt: time.Now(),
+		ID:         id,
+		Username:   req.Username,
+		Email:      req.Email,
+		FirebaseID: req.FirebaseID,
+		PhotoURL:   req.PhotoURL,
+		CreatedAt:  time.Now(),
 	}
 
 	if err := s.userRepo.CreateUser(ctx, user); err != nil {
-		return nil, err
-	}
-
-	if err := s.cryptoService.SavePrivateKey(user.ID, privateKey); err != nil {
-		log.Printf("Failed to save private key for user %s: %v", user.ID, err)
-		return nil, fmt.Errorf("failed to save private key: %w", err)
-	}
-
-	
-	refreshToken, _, err := s.createAndSaveRefreshToken(ctx, user.ID)
-	if err != nil {
-		return nil, err
-	}
-
-	
-	accessToken, err := s.createToken(user.ID)
-	if err != nil {
-		return nil, err
-	}
-
-	return &models.AuthResponse{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		User:         *user,
-	}, nil
-}
-
-func (s *AuthService) Login(ctx context.Context, req *models.LoginRequest) (*models.AuthResponse, error) {
-	user, err := s.userRepo.GetUserByEmail(ctx, req.Email)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
-		return nil, errors.New("invalid credentials")
-	}
-
-	accessToken, err := s.createToken(user.ID)
-	if err != nil {
 		return nil, err
 	}
 
@@ -123,13 +72,18 @@ func (s *AuthService) Login(ctx context.Context, req *models.LoginRequest) (*mod
 		return nil, err
 	}
 
+	// Create access token
+	accessToken, err := s.createToken(user.ID)
+	if err != nil {
+		return nil, err
+	}
+
 	return &models.AuthResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		User:         *user,
 	}, nil
 }
-
 
 func (s *AuthService) createToken(userID uuid.UUID) (string, error) {
 	claims := jwt.MapClaims{
@@ -142,7 +96,6 @@ func (s *AuthService) createToken(userID uuid.UUID) (string, error) {
 	return token.SignedString([]byte(s.config.JWT.Secret))
 }
 
-
 func (s *AuthService) createRefreshToken(userID uuid.UUID) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id": userID.String(),
@@ -154,7 +107,6 @@ func (s *AuthService) createRefreshToken(userID uuid.UUID) (string, error) {
 	return token.SignedString([]byte(s.config.JWT.Secret))
 }
 
-
 func (s *AuthService) createAndSaveRefreshToken(ctx context.Context, userID uuid.UUID) (string, *models.RefreshToken, error) {
 	// Generate refresh token
 	refreshTokenString, err := s.createRefreshToken(userID)
@@ -162,11 +114,11 @@ func (s *AuthService) createAndSaveRefreshToken(ctx context.Context, userID uuid
 		return "", nil, err
 	}
 
-	
+	// Hash the refresh token for storage
 	hash := sha256.Sum256([]byte(refreshTokenString))
 	tokenHash := hex.EncodeToString(hash[:])
 
-	
+	// Create refresh token record
 	refreshTokenID, err := uuid.NewV4()
 	if err != nil {
 		return "", nil, err
@@ -176,11 +128,11 @@ func (s *AuthService) createAndSaveRefreshToken(ctx context.Context, userID uuid
 		ID:        refreshTokenID,
 		UserID:    userID,
 		TokenHash: tokenHash,
-		ExpiresAt: time.Now().Add(s.config.JWT.RefreshTokenTTL), // Use config TTL
+		ExpiresAt: time.Now().Add(s.config.JWT.RefreshTokenTTL),
 		CreatedAt: time.Now(),
 	}
 
-
+	// Save refresh token to database
 	if err := s.refreshTokenRepo.SaveRefreshToken(ctx, refreshToken); err != nil {
 		log.Printf("Error saving refresh token: %v", err)
 		return "", nil, err
@@ -218,7 +170,7 @@ func (s *AuthService) GetTokenExpiration(tokenString string) (time.Time, error) 
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return time.Time{}, errors.New("unexpected signing method")
 		}
-		return []byte(s.config.JWT.Secret), nil
+		return time.Time{}, errors.New("unexpected signing method")
 	})
 	if err != nil {
 		return time.Time{}, err
@@ -234,124 +186,102 @@ func (s *AuthService) GetTokenExpiration(tokenString string) (time.Time, error) 
 	return time.Time{}, errors.New("invalid token")
 }
 
-func (s *AuthService) RefreshToken(ctx context.Context, refreshTokenString string) (*models.AuthResponse, error) {
-	// Hash the provided refresh token
+// RefreshAccessToken refreshes an access token using a valid refresh token
+func (s *AuthService) RefreshAccessToken(ctx context.Context, refreshTokenString string) (string, error) {
+	// Parse and validate the refresh token
+	token, err := jwt.Parse(refreshTokenString, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("unexpected signing method")
+		}
+		return []byte(s.config.JWT.Secret), nil
+	})
+	if err != nil {
+		return "", errors.New("invalid refresh token")
+	}
+
+	// Extract claims
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok || !token.Valid {
+		return "", errors.New("invalid refresh token")
+	}
+
+	// Check if it's a refresh token
+	tokenType, ok := claims["type"].(string)
+	if !ok || tokenType != "refresh" {
+		return "", errors.New("invalid token type")
+	}
+
+	// Extract user ID
+	userIDStr, ok := claims["user_id"].(string)
+	if !ok {
+		return "", errors.New("invalid token")
+	}
+
+	userID, err := uuid.FromString(userIDStr)
+	if err != nil {
+		return "", errors.New("invalid user ID in token")
+	}
+
+	// Hash the refresh token to check against database
 	hash := sha256.Sum256([]byte(refreshTokenString))
 	tokenHash := hex.EncodeToString(hash[:])
 
-
+	// Check if refresh token exists and is valid in database
 	refreshToken, err := s.refreshTokenRepo.GetRefreshTokenByHash(ctx, tokenHash)
 	if err != nil {
-		return nil, err
+		return "", errors.New("refresh token not found")
 	}
+
 	if refreshToken == nil {
-		return nil, errors.New("invalid refresh token")
+		return "", errors.New("refresh token not found")
 	}
 
-	
-	expired, err := s.refreshTokenRepo.IsTokenExpired(ctx, tokenHash)
+	// Check if refresh token is expired
+	if time.Now().After(refreshToken.ExpiresAt) {
+		return "", errors.New("refresh token expired")
+	}
+
+	// Check if user ID matches
+	if refreshToken.UserID != userID {
+		return "", errors.New("token user mismatch")
+	}
+
+	// Generate new access token
+	newAccessToken, err := s.createToken(userID)
 	if err != nil {
-		return nil, err
-	}
-	if expired {
-	
-		s.refreshTokenRepo.DeleteRefreshToken(ctx, tokenHash)
-		return nil, errors.New("refresh token expired")
+		return "", fmt.Errorf("failed to create new access token: %w", err)
 	}
 
+	return newAccessToken, nil
+}
 
-	user, err := s.userRepo.GetUserByID(ctx, refreshToken.UserID)
+// Login handles user login and returns new tokens
+func (s *AuthService) Login(ctx context.Context, req *models.LoginRequest) (*models.AuthResponse, error) {
+	// Check if user exists by Firebase ID
+	user, err := s.userRepo.GetUserByFirebaseID(ctx, req.FirebaseID)
 	if err != nil {
-		return nil, errors.New("user not found")
+		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
+	
 	if user == nil {
 		return nil, errors.New("user not found")
 	}
 
-	
-	if err := s.refreshTokenRepo.DeleteRefreshToken(ctx, tokenHash); err != nil {
-		return nil, err
-	}
-
-	
-	accessToken, err := s.createToken(user.ID)
+	// Create new refresh token and save to database
+	refreshToken, _, err := s.createAndSaveRefreshToken(ctx, user.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	
-	newRefreshToken, _, err := s.createAndSaveRefreshToken(ctx, user.ID)
+	// Create new access token
+	accessToken, err := s.createToken(user.ID)
 	if err != nil {
 		return nil, err
 	}
 
 	return &models.AuthResponse{
 		AccessToken:  accessToken,
-		RefreshToken: newRefreshToken,
+		RefreshToken: refreshToken,
 		User:         *user,
 	}, nil
-}
-
-
-func (s *AuthService) RefreshTokenByEmail(ctx context.Context, email string) (*models.AuthResponse, error) {
-	
-	user, err := s.userRepo.GetUserByEmail(ctx, email)
-	if err != nil {
-		return nil, err
-	}
-	if user == nil {
-		return nil, errors.New("user not found")
-	}
-
-	
-	refreshToken, err := s.refreshTokenRepo.GetRefreshTokenByEmail(ctx, email)
-	if err != nil {
-		return nil, err
-	}
-	if refreshToken == nil {
-		return nil, errors.New("no refresh token found for this user")
-	}
-
-
-	expired, err := s.refreshTokenRepo.IsTokenExpired(ctx, refreshToken.TokenHash)
-	if err != nil {
-		return nil, err
-	}
-	if expired {
-	
-		s.refreshTokenRepo.DeleteRefreshToken(ctx, refreshToken.TokenHash)
-		return nil, errors.New("refresh token expired")
-	}
-
-	
-	if err := s.refreshTokenRepo.DeleteRefreshToken(ctx, refreshToken.TokenHash); err != nil {
-		return nil, err
-	}
-
-	accessToken, err := s.createToken(user.ID)
-	if err != nil {
-		return nil, err
-	}
-
-
-	newRefreshToken, _, err := s.createAndSaveRefreshToken(ctx, user.ID)
-	if err != nil {
-		return nil, err
-	}
-
-	return &models.AuthResponse{
-		AccessToken:  accessToken,
-		RefreshToken: newRefreshToken,
-		User:         *user,
-	}, nil
-}
-
-
-func (s *AuthService) Logout(ctx context.Context, tokenHash string) error {
-	return s.refreshTokenRepo.DeleteRefreshToken(ctx, tokenHash)
-}
-
-
-func (s *AuthService) LogoutByEmail(ctx context.Context, email string) error {
-	return s.refreshTokenRepo.DeleteRefreshTokenByEmail(ctx, email)
 }

@@ -26,7 +26,7 @@ type ChatMessage struct {
 	ID               string `json:"id"`
 	SenderID         string `json:"sender_id"`
 	SenderUsername   string `json:"sender_username"`
-	EncryptedContent string `json:"encrypted_content"`
+	Content          string `json:"content"`
 	MessageType      string `json:"message_type"`
 	Timestamp        int64  `json:"timestamp"`
 	Room             string `json:"room"`
@@ -38,7 +38,7 @@ type GroupMessage struct {
 	ID               string `json:"id"`
 	SenderID         string `json:"sender_id"`
 	SenderUsername   string `json:"sender_username"`
-	EncryptedContent string `json:"encrypted_content"`
+	Content          string `json:"content"`
 	MessageType      string `json:"message_type"`
 	Timestamp        int64  `json:"timestamp"`
 	Room             string `json:"room"`
