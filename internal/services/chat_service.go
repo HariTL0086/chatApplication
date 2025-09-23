@@ -132,6 +132,27 @@ func (s *ChatService) GetConversationByRoomName(ctx context.Context, roomName st
 	return s.chatRepo.GetConversationByParticipants(ctx, userID1, userID2)
 }
 
+func (s *ChatService) GetRoomNameForConversation(ctx context.Context, conversationID uuid.UUID) (string, error) {
+	// Get participants for this conversation
+	participants, err := s.GetConversationParticipants(ctx, conversationID)
+	if err != nil {
+		return "", err
+	}
+
+	if len(participants) != 2 {
+		return "", errors.New("conversation must have exactly 2 participants")
+	}
+
+	// Create room name using the same logic as createPrivateRoomName
+	userID1 := participants[0]
+	userID2 := participants[1]
+
+	if userID1.String() < userID2.String() {
+		return "private_" + userID1.String() + "_" + userID2.String(), nil
+	}
+	return "private_" + userID2.String() + "_" + userID1.String(), nil
+}
+
 func (s *ChatService) GetConversationByGroupID(ctx context.Context, groupID uuid.UUID) (*models.Conversation, error) {
 	return s.chatRepo.GetConversationByGroupID(ctx, groupID)
 }
@@ -162,6 +183,14 @@ func (s *ChatService) GetDecryptedMessages(ctx context.Context, conversationID, 
 
 func (s *ChatService) MarkMessageAsSeen(ctx context.Context, messageID uuid.UUID) error {
 	return s.chatRepo.UpdateMessageStatus(ctx, messageID, "seen")
+}
+
+func (s *ChatService) UpdateMessageStatus(ctx context.Context, messageID uuid.UUID, status string) error {
+	return s.chatRepo.UpdateMessageStatus(ctx, messageID, status)
+}
+
+func (s *ChatService) GetConversationByMessageID(ctx context.Context, messageID uuid.UUID) (*models.Conversation, error) {
+	return s.chatRepo.GetConversationByMessageID(ctx, messageID)
 }
 
 func (s *ChatService) GetUnseenMessages(ctx context.Context, recipientID uuid.UUID) ([]*models.Message, error) {

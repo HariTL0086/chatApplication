@@ -125,6 +125,49 @@ func (rs *RedisService) SetUserOffline(userID uuid.UUID) error {
 	return nil
 }
 
+func (rs *RedisService) UpdateUserStatus(userID uuid.UUID, status string) error {
+	ctx := context.Background()
+	key := fmt.Sprintf("user:status:%s", userID.String())
+
+	// Get current status to preserve username and socket ID
+	var currentStatus UserStatus
+	statusJSON, err := rs.client.Get(ctx, key).Result()
+	if err == nil {
+		json.Unmarshal([]byte(statusJSON), &currentStatus)
+	}
+
+	// Update status while preserving other fields
+	updatedStatus := UserStatus{
+		UserID:   userID.String(),
+		Username: currentStatus.Username,
+		Status:   status,
+		LastSeen: time.Now(),
+		SocketID: currentStatus.SocketID, // Preserve socket ID for online users
+	}
+
+	// If setting to online and not already in online users set, add them
+	if status == "online" && currentStatus.Status != "online" {
+		err = rs.client.SAdd(ctx, "online_users", userID.String()).Err()
+		if err != nil {
+			return fmt.Errorf("failed to add user to online set: %v", err)
+		}
+	}
+
+	newStatusJSON, err := json.Marshal(updatedStatus)
+	if err != nil {
+		return fmt.Errorf("failed to marshal user status: %v", err)
+	}
+
+	// Set user status with expiration (24 hours)
+	err = rs.client.Set(ctx, key, newStatusJSON, 24*time.Hour).Err()
+	if err != nil {
+		return fmt.Errorf("failed to set user status: %v", err)
+	}
+
+	log.Printf("User %s (%s) status updated to: %s", currentStatus.Username, userID.String(), status)
+	return nil
+}
+
 func (rs *RedisService) GetUserStatus(userID string) (*UserStatus, error) {
 	ctx := context.Background()
 	key := fmt.Sprintf("user:status:%s", userID)
@@ -472,6 +515,57 @@ func (rs *RedisService) GetTypingUsers(room string) ([]*TypingStatus, error) {
 		}
 
 		typingUsers = append(typingUsers, &typingStatus)
+	}
+
+	return typingUsers, nil
+}
+
+func (rs *RedisService) GetTypingStatusForConversation(conversationID string) ([]*TypingStatus, error) {
+	ctx := context.Background()
+	var typingUsers []*TypingStatus
+
+	// Get all typing set keys
+	pattern := "typing_users:*"
+	keys, err := rs.client.Keys(ctx, pattern).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get typing keys: %v", err)
+	}
+
+	// Check each room for typing users
+	for _, setKey := range keys {
+		room := strings.TrimPrefix(setKey, "typing_users:")
+		
+		// Get typing users for this room
+		userIDs, err := rs.client.SMembers(ctx, setKey).Result()
+		if err != nil {
+			continue
+		}
+
+		// Get typing status for each user
+		for _, userID := range userIDs {
+			key := fmt.Sprintf("typing:%s:%s", room, userID)
+			typingJSON, err := rs.client.Get(ctx, key).Result()
+			if err != nil {
+				// Remove user from set if status doesn't exist
+				rs.client.SRem(ctx, setKey, userID)
+				continue
+			}
+
+			var typingStatus TypingStatus
+			if err := json.Unmarshal([]byte(typingJSON), &typingStatus); err != nil {
+				continue
+			}
+
+			// Check if typing status has expired
+			if time.Now().After(typingStatus.ExpiresAt) {
+				// Remove expired typing status
+				rs.client.Del(ctx, key)
+				rs.client.SRem(ctx, setKey, userID)
+				continue
+			}
+
+			typingUsers = append(typingUsers, &typingStatus)
+		}
 	}
 
 	return typingUsers, nil

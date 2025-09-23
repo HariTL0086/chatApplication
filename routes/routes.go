@@ -7,7 +7,6 @@ import (
 	"Chat_App/internal/services"
 	"Chat_App/internal/socket"
 	"log"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -31,6 +30,7 @@ func SetupRoutes(authService *services.AuthService, userRepo *repository.UserRep
     authHandler := handlers.NewAuthHandler(authService)
     chatHandler := handlers.NewChatHandler(chatService, authService)
     groupHandler := handlers.NewGroupHandler(groupService)
+    userHandler := handlers.NewUserHandler(services.NewUserService(userRepo), authService)
 
 
     auth := r.Group("/auth")
@@ -65,42 +65,15 @@ func SetupRoutes(authService *services.AuthService, userRepo *repository.UserRep
         chat.GET("/group/:group_id/history", chatHandler.GetGroupChatHistory)
     }
 
-    // User search API
+    // User APIs
     users := r.Group("/users")
     users.Use(middleware.AuthMiddleware(authService))
     {
-        users.GET("/search", func(c *gin.Context) {
-            username := c.Query("username")
-            if username == "" {
-                c.JSON(400, gin.H{"error": "Username parameter is required"})
-                return
-            }
-            
-            limit := 10 // Default limit
-            if limitStr := c.Query("limit"); limitStr != "" {
-                if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 && parsedLimit <= 50 {
-                    limit = parsedLimit
-                }
-            }
-            
-            users, err := userRepo.SearchUsersByUsername(c.Request.Context(), username, limit)
-            if err != nil {
-                c.JSON(500, gin.H{"error": "Failed to search users"})
-                return
-            }
-            
-            // Return only necessary user information for search results
-            var searchResults []gin.H
-            for _, user := range users {
-                searchResults = append(searchResults, gin.H{
-                    "id":       user.ID,
-                    "username": user.Username,
-                    "email":    user.Email,
-                })
-            }
-            
-            c.JSON(200, gin.H{"users": searchResults})
-        })
+        users.GET("/", userHandler.GetAllUsers)                    // Get all users with pagination
+        users.GET("/contacts", userHandler.GetContactUsers)        // Get all users except current user
+        users.GET("/search", userHandler.SearchUsers)              // Search users by username
+        users.GET("/:id", userHandler.GetUserByID)                 // Get specific user by ID
+        users.GET("/firebase/:firebase_id", userHandler.GetUserByFirebaseID) // Get user by Firebase ID
     }
 
    

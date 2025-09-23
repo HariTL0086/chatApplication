@@ -74,7 +74,7 @@ func Load() (*Config, error) {
 		},
 		JWT: JWTConfig{
 			Secret:          getEnv("JWT_SECRET", "chatApplication"),
-			AccessTokenTTL:  getEnvAsDuration("JWT_ACCESS_TOKEN_TTL", 100*time.Minute),
+			AccessTokenTTL:  getEnvAsDuration("JWT_ACCESS_TOKEN_TTL", 24*time.Hour),
 			RefreshTokenTTL: getEnvAsDuration("JWT_REFRESH_TOKEN_TTL", 7*24*time.Hour),
 		},
 	}

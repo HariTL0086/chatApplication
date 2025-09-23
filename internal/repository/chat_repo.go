@@ -180,6 +180,28 @@ func (r *ChatRepository) UpdateMessageStatus(ctx context.Context, messageID uuid
 	return result.Error
 }
 
+func (r *ChatRepository) GetConversationByMessageID(ctx context.Context, messageID uuid.UUID) (*models.Conversation, error) {
+	var message models.Message
+	result := r.db.WithContext(ctx).
+		Where("id = ?", messageID).
+		First(&message)
+
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	var conversation models.Conversation
+	result = r.db.WithContext(ctx).
+		Where("id = ?", message.ConversationID).
+		First(&conversation)
+
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	return &conversation, nil
+}
+
 
 func (r *ChatRepository) GetConversationByGroupID(ctx context.Context, groupID uuid.UUID) (*models.Conversation, error) {
 	var conversation models.Conversation

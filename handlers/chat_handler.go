@@ -157,10 +157,11 @@ func (h *ChatHandler) GetChatHistory(c *gin.Context) {
 		messageList = append(messageList, gin.H{
 			"id":               msg.ID.String(),
 			"sender_id":        msg.SenderID.String(),
+			"sender_name":      msg.Sender.Username, // Access sender name through the Sender relationship
 			"content":          msg.Content, // This now contains the actual message content
 			"message_type":     msg.MessageType,
 			"message_status":   msg.MessageStatus,
-			"timestamp":        msg.CreatedAt.Unix(),
+			"timestamp":        msg.CreatedAt,
 			"conversation_id":  conversationID.String(),
 		})
 	}
@@ -225,7 +226,7 @@ func (h *ChatHandler) GetChatHistoryWithUser(c *gin.Context) {
 			"content":          msg.Content, // This now contains the actual message content
 			"message_type":     msg.MessageType,
 			"message_status":   msg.MessageStatus,
-			"timestamp":        msg.CreatedAt.Unix(),
+			"timestamp":        msg.CreatedAt,
 			"conversation_id":  conversation.ID.String(),
 		})
 	}
@@ -289,10 +290,11 @@ func (h *ChatHandler) GetGroupChatHistory(c *gin.Context) {
 		messageList = append(messageList, gin.H{
 			"id":               msg.ID.String(),
 			"sender_id":        msg.SenderID.String(),
+			"sender_name":      msg.Sender.Username, // Access sender name through the Sender relationship
 			"content":          msg.Content, // This contains the message content
 			"message_type":     msg.MessageType,
 			"message_status":   msg.MessageStatus,
-			"timestamp":        msg.CreatedAt.Unix(),
+			"timestamp":        msg.CreatedAt, // Convert to Unix timestamp for consistency
 			"conversation_id":  conversation.ID.String(),
 			"group_id":         groupID.String(),
 		})
@@ -309,6 +311,54 @@ func (h *ChatHandler) GetGroupChatHistory(c *gin.Context) {
 	})
 }
 
+
+func (h *ChatHandler) UpdateMessageStatus(c *gin.Context) {
+	_, err := h.getUserIDFromToken(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+		return
+	}
+
+	var req struct {
+		MessageID string `json:"message_id" binding:"required"`
+		Status    string `json:"status" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+
+	// Validate status values
+	validStatuses := map[string]bool{
+		"sent":      true,
+		"delivered": true,
+		"seen":      true,
+	}
+	if !validStatuses[req.Status] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid status. Must be 'sent', 'delivered', or 'seen'"})
+		return
+	}
+
+	messageID, err := uuid.FromString(req.MessageID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid message ID"})
+		return
+	}
+
+	// Update message status
+	err = h.chatService.UpdateMessageStatus(c.Request.Context(), messageID, req.Status)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update message status"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message_id": messageID.String(),
+		"status":     req.Status,
+		"success":    true,
+	})
+}
 
 func (h *ChatHandler) getUserIDFromToken(c *gin.Context) (uuid.UUID, error) {
 	authHeader := c.GetHeader("Authorization")

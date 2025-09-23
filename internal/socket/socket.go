@@ -143,17 +143,24 @@ func (sm *SocketManager) setupEventHandlers() {
                     relevantUserIDs, err := sm.getRelevantUserIDs(user.UserID)
                     if err != nil {
                         log.Printf("Failed to get relevant user IDs for %s: %v", user.UserID.String(), err)
-                        
-                        sm.io.Emit("user_status_change", map[string]interface{}{
-                            "user_id": user.UserID.String(),
-                            "username": user.Username,
-                            "status": "offline",
-                            "last_seen": time.Now().Unix(),
+                        // Fallback: emit to all authenticated clients
+                        authenticatedClients.Range(func(key, value interface{}) bool {
+                            if authClient, ok := value.(*AuthenticatedClient); ok {
+                                if authClient.UserID != user.UserID { // Don't emit to self
+                                    sm.io.To(socket.Room("user_"+authClient.UserID.String())).Emit("user_status_change", map[string]interface{}{
+                                        "user_id": user.UserID.String(),
+                                        "username": user.Username,
+                                        "status": "offline",
+                                        "last_seen": time.Now().Unix(),
+                                    })
+                                }
+                            }
+                            return true
                         })
                         return
                     }
                     
-                
+                    // Emit to relevant users
                     if len(relevantUserIDs) > 0 {
                         sm.emitStatusChangeToUsers(relevantUserIDs, map[string]interface{}{
                             "user_id": user.UserID.String(),
@@ -172,6 +179,9 @@ func (sm *SocketManager) setupEventHandlers() {
             "message": "Please authenticate to use chat features",
         })
     })
+    
+    // Start periodic status sync to ensure all users have up-to-date information
+    go sm.startPeriodicStatusSync()
 }
 
 
@@ -341,15 +351,22 @@ func (sm *SocketManager) handleAuthentication(client *socket.Socket) func(...any
         relevantUserIDs, err := sm.getRelevantUserIDs(userID)
         if err != nil {
             log.Printf("Failed to get relevant user IDs for %s: %v", userID.String(), err)
-         
-            sm.io.Emit("user_status_change", map[string]interface{}{
-                "user_id": userID.String(),
-                "username": username,
-                "status": "online",
-                "last_seen": time.Now().Unix(),
+            // Fallback: emit to all authenticated clients
+            authenticatedClients.Range(func(key, value interface{}) bool {
+                if authClient, ok := value.(*AuthenticatedClient); ok {
+                    if authClient.UserID != userID { // Don't emit to self
+                        sm.io.To(socket.Room("user_"+authClient.UserID.String())).Emit("user_status_change", map[string]interface{}{
+                            "user_id": userID.String(),
+                            "username": username,
+                            "status": "online",
+                            "last_seen": time.Now().Unix(),
+                        })
+                    }
+                }
+                return true
             })
         } else {
-         
+            // Emit to relevant users
             if len(relevantUserIDs) > 0 {
                 sm.emitStatusChangeToUsers(relevantUserIDs, map[string]interface{}{
                     "user_id": userID.String(),
@@ -362,6 +379,16 @@ func (sm *SocketManager) handleAuthentication(client *socket.Socket) func(...any
 
         // Join user to their personal room for receiving decrypted messages
         client.Join(socket.Room("user_" + userID.String()))
+
+        // Send current online status of all other users to the newly connected user
+        sm.sendCurrentOnlineStatusToUser(client, userID)
+
+        // Setup status refresh handler for this client
+        client.On("refresh_online_status", sm.handleRefreshOnlineStatus(client))
+        client.On("get_user_status", sm.handleGetUserStatus(client))
+        client.On("get_bulk_user_status", sm.handleGetBulkUserStatus(client))
+        client.On("set_user_status", sm.handleSetUserStatus(client))
+        client.On("get_conversation_users_status", sm.handleGetConversationUsersStatus(client))
 
      
 		sm.chatHandler.autoJoinUserToConversations(client, userID)
@@ -459,14 +486,15 @@ func (sm *SocketManager) getRelevantUserIDs(userID uuid.UUID) ([]string, error) 
 
 
 func (sm *SocketManager) emitStatusChangeToUsers(userIDs []string, statusData map[string]interface{}) {
-
-    var targetSocketIDs []string
-    
+    // Emit status change directly to each relevant user's personal room
     authenticatedClients.Range(func(key, value interface{}) bool {
         if authClient, ok := value.(*AuthenticatedClient); ok {
             for _, userID := range userIDs {
                 if authClient.UserID.String() == userID {
-                    targetSocketIDs = append(targetSocketIDs, string(authClient.SocketID))
+                    // Emit status change directly to this user's personal room
+                    sm.io.To(socket.Room("user_"+userID)).Emit("user_status_change", statusData)
+                    log.Printf("Emitted status change for user %s to user %s (%s)", 
+                        statusData["user_id"], userID, authClient.Username)
                     break
                 }
             }
@@ -474,13 +502,390 @@ func (sm *SocketManager) emitStatusChangeToUsers(userIDs []string, statusData ma
         return true
     })
     
- 
-    for _, socketID := range targetSocketIDs {
-        sm.io.To(socket.Room(socketID)).Emit("user_status_change", statusData)
+    log.Printf("Emitted status change for user %s to %d relevant users", 
+        statusData["user_id"], len(userIDs))
+}
+
+func (sm *SocketManager) sendCurrentOnlineStatusToUser(client *socket.Socket, userID uuid.UUID) {
+    // Get all online users
+    onlineUsers, err := sm.redisService.GetOnlineUsers()
+    if err != nil {
+        log.Printf("Failed to get online users for status sync: %v", err)
+        return
     }
     
-    log.Printf("Emitted status change for user %s to %d relevant users", 
-        statusData["user_id"], len(targetSocketIDs))
+    // Send current online status of all other users to the newly connected user
+    for _, onlineUser := range onlineUsers {
+        if onlineUser.UserID != userID.String() { // Don't send own status
+            statusData := map[string]interface{}{
+                "user_id":   onlineUser.UserID,
+                "username":  onlineUser.Username,
+                "status":    "online",
+                "last_seen": onlineUser.LastSeen.Unix(),
+            }
+            
+            client.Emit("user_status_change", statusData)
+            log.Printf("Sent current online status of user %s to newly connected user %s", 
+                onlineUser.UserID, userID.String())
+        }
+    }
+}
+
+func (sm *SocketManager) startPeriodicStatusSync() {
+    ticker := time.NewTicker(30 * time.Second) // Sync every 30 seconds
+    defer ticker.Stop()
+    
+    for range ticker.C {
+        sm.syncOnlineStatusToAllUsers()
+    }
+}
+
+func (sm *SocketManager) syncOnlineStatusToAllUsers() {
+    // Get all online users
+    onlineUsers, err := sm.redisService.GetOnlineUsers()
+    if err != nil {
+        log.Printf("Failed to get online users for periodic sync: %v", err)
+        return
+    }
+    
+    // Create a map of online user IDs for quick lookup
+    onlineUserMap := make(map[string]bool)
+    for _, user := range onlineUsers {
+        onlineUserMap[user.UserID] = true
+    }
+    
+    // Send current online status to all authenticated clients
+    authenticatedClients.Range(func(key, value interface{}) bool {
+        if authClient, ok := value.(*AuthenticatedClient); ok {
+            // Send status of all other online users to this client
+            for _, onlineUser := range onlineUsers {
+                if onlineUser.UserID != authClient.UserID.String() { // Don't send own status
+                    statusData := map[string]interface{}{
+                        "user_id":   onlineUser.UserID,
+                        "username":  onlineUser.Username,
+                        "status":    "online",
+                        "last_seen": onlineUser.LastSeen.Unix(),
+                    }
+                    
+                    sm.io.To(socket.Room("user_"+authClient.UserID.String())).Emit("user_status_change", statusData)
+                }
+            }
+        }
+        return true
+    })
+    
+    log.Printf("Completed periodic status sync for %d online users", len(onlineUsers))
+}
+
+func (sm *SocketManager) handleRefreshOnlineStatus(client *socket.Socket) func(...any) {
+    return func(data ...any) {
+        authClient, authenticated := getAuthenticatedClient(client.Id())
+        if !authenticated {
+            client.Emit("error", map[string]interface{}{
+                "error": "Please authenticate first",
+            })
+            return
+        }
+        
+        // Send current online status of all other users to this client
+        sm.sendCurrentOnlineStatusToUser(client, authClient.UserID)
+        
+        log.Printf("Refreshed online status for user %s (%s)", 
+            authClient.Username, authClient.UserID.String())
+    }
+}
+
+func (sm *SocketManager) handleGetUserStatus(client *socket.Socket) func(...any) {
+    return func(data ...any) {
+        authClient, authenticated := getAuthenticatedClient(client.Id())
+        if !authenticated {
+            client.Emit("error", map[string]interface{}{
+                "error": "Please authenticate first",
+            })
+            return
+        }
+        
+        if len(data) == 0 {
+            client.Emit("error", map[string]interface{}{
+                "error": "No user ID provided",
+            })
+            return
+        }
+        
+        userData, ok := data[0].(map[string]interface{})
+        if !ok {
+            client.Emit("error", map[string]interface{}{
+                "error": "Invalid user data format",
+            })
+            return
+        }
+        
+        targetUserID, exists := userData["user_id"].(string)
+        if !exists {
+            client.Emit("error", map[string]interface{}{
+                "error": "User ID is required",
+            })
+            return
+        }
+        
+        // Get the status of the target user
+        userStatus, err := sm.redisService.GetUserStatus(targetUserID)
+        if err != nil {
+            log.Printf("Failed to get status for user %s: %v", targetUserID, err)
+            client.Emit("error", map[string]interface{}{
+                "error": "Failed to get user status",
+            })
+            return
+        }
+        
+        // Send the user status back to the requesting client
+        client.Emit("user_status_response", map[string]interface{}{
+            "user_id":   userStatus.UserID,
+            "username":  userStatus.Username,
+            "status":    userStatus.Status,
+            "last_seen": userStatus.LastSeen.Unix(),
+        })
+        
+        log.Printf("Sent status of user %s to user %s (%s)", 
+            targetUserID, authClient.Username, authClient.UserID.String())
+    }
+}
+
+func (sm *SocketManager) handleGetBulkUserStatus(client *socket.Socket) func(...any) {
+    return func(data ...any) {
+        authClient, authenticated := getAuthenticatedClient(client.Id())
+        if !authenticated {
+            client.Emit("error", map[string]interface{}{
+                "error": "Please authenticate first",
+            })
+            return
+        }
+        
+        if len(data) == 0 {
+            client.Emit("error", map[string]interface{}{
+                "error": "No user IDs provided",
+            })
+            return
+        }
+        
+        userData, ok := data[0].(map[string]interface{})
+        if !ok {
+            client.Emit("error", map[string]interface{}{
+                "error": "Invalid user data format",
+            })
+            return
+        }
+        
+        userIDsInterface, exists := userData["user_ids"]
+        if !exists {
+            client.Emit("error", map[string]interface{}{
+                "error": "User IDs are required",
+            })
+            return
+        }
+        
+        // Convert interface{} to []string
+        var userIDs []string
+        switch v := userIDsInterface.(type) {
+        case []string:
+            userIDs = v
+        case []interface{}:
+            for _, id := range v {
+                if strID, ok := id.(string); ok {
+                    userIDs = append(userIDs, strID)
+                }
+            }
+        default:
+            client.Emit("error", map[string]interface{}{
+                "error": "Invalid user IDs format",
+            })
+            return
+        }
+        
+        if len(userIDs) == 0 {
+            client.Emit("error", map[string]interface{}{
+                "error": "At least one user ID is required",
+            })
+            return
+        }
+        
+        // Get the status of all requested users
+        usersStatus, err := sm.redisService.GetUsersStatus(userIDs)
+        if err != nil {
+            log.Printf("Failed to get status for users %v: %v", userIDs, err)
+            client.Emit("error", map[string]interface{}{
+                "error": "Failed to get users status",
+            })
+            return
+        }
+        
+        // Send the users status back to the requesting client
+        client.Emit("bulk_user_status_response", map[string]interface{}{
+            "users_status": usersStatus,
+        })
+        
+        log.Printf("Sent status of %d users to user %s (%s)", 
+            len(userIDs), authClient.Username, authClient.UserID.String())
+    }
+}
+
+func (sm *SocketManager) handleSetUserStatus(client *socket.Socket) func(...any) {
+    return func(data ...any) {
+        authClient, authenticated := getAuthenticatedClient(client.Id())
+        if !authenticated {
+            client.Emit("error", map[string]interface{}{
+                "error": "Please authenticate first",
+            })
+            return
+        }
+        
+        if len(data) == 0 {
+            client.Emit("error", map[string]interface{}{
+                "error": "No status data provided",
+            })
+            return
+        }
+        
+        statusData, ok := data[0].(map[string]interface{})
+        if !ok {
+            client.Emit("error", map[string]interface{}{
+                "error": "Invalid status data format",
+            })
+            return
+        }
+        
+        status, exists := statusData["status"].(string)
+        if !exists {
+            client.Emit("error", map[string]interface{}{
+                "error": "Status is required",
+            })
+            return
+        }
+        
+        // Validate status
+        validStatuses := map[string]bool{
+            "online":  true,
+            "away":    true,
+            "busy":    true,
+            "offline": true,
+        }
+        
+        if !validStatuses[status] {
+            client.Emit("error", map[string]interface{}{
+                "error": "Invalid status. Must be one of: online, away, busy, offline",
+            })
+            return
+        }
+        
+        // Update user status in Redis
+        if status == "offline" {
+            if err := sm.redisService.SetUserOffline(authClient.UserID); err != nil {
+                log.Printf("Failed to set user %s offline: %v", authClient.UserID.String(), err)
+                client.Emit("error", map[string]interface{}{
+                    "error": "Failed to update status",
+                })
+                return
+            }
+        } else {
+            // For other statuses, update the status without removing from online users
+            if err := sm.redisService.UpdateUserStatus(authClient.UserID, status); err != nil {
+                log.Printf("Failed to update status for user %s: %v", authClient.UserID.String(), err)
+                client.Emit("error", map[string]interface{}{
+                    "error": "Failed to update status",
+                })
+                return
+            }
+        }
+        
+        // Get relevant user IDs for status updates
+        relevantUserIDs, err := sm.getRelevantUserIDs(authClient.UserID)
+        if err != nil {
+            log.Printf("Failed to get relevant user IDs for %s: %v", authClient.UserID.String(), err)
+            // Fallback: emit to all authenticated clients
+            authenticatedClients.Range(func(key, value interface{}) bool {
+                if otherAuthClient, ok := value.(*AuthenticatedClient); ok {
+                    if otherAuthClient.UserID != authClient.UserID { // Don't emit to self
+                        sm.io.To(socket.Room("user_"+otherAuthClient.UserID.String())).Emit("user_status_change", map[string]interface{}{
+                            "user_id":   authClient.UserID.String(),
+                            "username":  authClient.Username,
+                            "status":    status,
+                            "last_seen": time.Now().Unix(),
+                        })
+                    }
+                }
+                return true
+            })
+        } else {
+            // Emit to relevant users
+            if len(relevantUserIDs) > 0 {
+                sm.emitStatusChangeToUsers(relevantUserIDs, map[string]interface{}{
+                    "user_id":   authClient.UserID.String(),
+                    "username":  authClient.Username,
+                    "status":    status,
+                    "last_seen": time.Now().Unix(),
+                })
+            }
+        }
+        
+        // Send confirmation to the user
+        client.Emit("status_updated", map[string]interface{}{
+            "user_id":   authClient.UserID.String(),
+            "username":  authClient.Username,
+            "status":    status,
+            "last_seen": time.Now().Unix(),
+        })
+        
+        log.Printf("User %s (%s) updated their status to: %s", 
+            authClient.Username, authClient.UserID.String(), status)
+    }
+}
+
+func (sm *SocketManager) handleGetConversationUsersStatus(client *socket.Socket) func(...any) {
+    return func(data ...any) {
+        authClient, authenticated := getAuthenticatedClient(client.Id())
+        if !authenticated {
+            client.Emit("error", map[string]interface{}{
+                "error": "Please authenticate first",
+            })
+            return
+        }
+        
+        // Get all users that this user has conversations with
+        relevantUserIDs, err := sm.getRelevantUserIDs(authClient.UserID)
+        if err != nil {
+            log.Printf("Failed to get relevant user IDs for %s: %v", authClient.UserID.String(), err)
+            client.Emit("error", map[string]interface{}{
+                "error": "Failed to get conversation users",
+            })
+            return
+        }
+        
+        if len(relevantUserIDs) == 0 {
+            // No conversations, send empty response
+            client.Emit("conversation_users_status_response", map[string]interface{}{
+                "users_status": map[string]*services.UserStatus{},
+            })
+            return
+        }
+        
+        // Get the status of all relevant users
+        usersStatus, err := sm.redisService.GetUsersStatus(relevantUserIDs)
+        if err != nil {
+            log.Printf("Failed to get status for conversation users %v: %v", relevantUserIDs, err)
+            client.Emit("error", map[string]interface{}{
+                "error": "Failed to get users status",
+            })
+            return
+        }
+        
+        // Send the users status back to the requesting client
+        client.Emit("conversation_users_status_response", map[string]interface{}{
+            "users_status": usersStatus,
+        })
+        
+        log.Printf("Sent status of %d conversation users to user %s (%s)", 
+            len(relevantUserIDs), authClient.Username, authClient.UserID.String())
+    }
 }
 
 
