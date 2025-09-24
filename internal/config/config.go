@@ -59,11 +59,11 @@ func Load() (*Config, error) {
 			WriteTimeout: getEnvAsDuration("SERVER_WRITE_TIMEOUT", 10*time.Second),
 		},
 		Database: DatabaseConfig{
-			Host:     getEnv("DB_HOST", "localhost"),
-			Port:     getEnv("DB_PORT", "5432"),
-			User:     getEnv("DB_USER", "postgres"),
-			Password: getEnv("DB_PASSWORD", "postgres"),
-			DBName:   getEnv("DB_NAME", "postgres"),
+			Host:     getEnv("DB_HOST", "3.108.58.129"),
+			Port:     getEnv("DB_PORT", "7125"),
+			User:     getEnv("DB_USER", "nova"),
+			Password: getEnv("DB_PASSWORD", "nova-db-postgres"),
+			DBName:   getEnv("DB_NAME", "nova"),
 			SSLMode:  getEnv("DB_SSLMODE", "disable"),
 		},
 		Redis: RedisConfig{
