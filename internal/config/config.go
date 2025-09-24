@@ -53,7 +53,7 @@ type RedisConfig struct {
 func Load() (*Config, error) {
 	config := &Config{
 		Server: ServerConfig{
-			Port:         getEnv("SERVER_PORT", "5000"),
+			Port:         getEnv("SERVER_PORT", "5001"),
 			Host:         getEnv("SERVER_HOST", "0.0.0.0"),
 			ReadTimeout:  getEnvAsDuration("SERVER_READ_TIMEOUT", 10*time.Second),
 			WriteTimeout: getEnvAsDuration("SERVER_WRITE_TIMEOUT", 10*time.Second),
