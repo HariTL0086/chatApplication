@@ -62,7 +62,7 @@ func Load() (*Config, error) {
 			Host:     getEnv("DB_HOST", "3.108.58.129"),
 			Port:     getEnv("DB_PORT", "7125"),
 			User:     getEnv("DB_USER", "nova"),
-			Password: getEnv("DB_PASSWORD", "nova-db-postgres"),
+			Password: getEnv("DB_PASSWORD", "nova-db-postgress"),
 			DBName:   getEnv("DB_NAME", "nova"),
 			SSLMode:  getEnv("DB_SSLMODE", "disable"),
 		},
