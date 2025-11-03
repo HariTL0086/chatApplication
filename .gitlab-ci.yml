@@ -1,43 +1,8 @@
-image: golang:1.24.1
-
 stages:
-  - install
-  - test
   - build
 
-# 1️⃣ Install dependencies
-install_dependencies:
-  stage: install
-  script:
-    - echo "📦 Installing dependencies..."
-    - go mod download
-    - go mod verify
-  cache:
-    key: "gomod-cache"
-    paths:
-      - /go/pkg/mod
-  artifacts:
-    paths:
-      - go.sum
-      - go.mod
-
-# 2️⃣ Run tests
-run_tests:
-  stage: test
-  script:
-    - echo "🧪 Running tests..."
-    - go test ./... -v -cover
-  artifacts:
-    when: always
-    reports:
-      junit: junit.xml
-
-# 3️⃣ Build the binary
-build_app:
+build_job:
   stage: build
   script:
-    - echo "🏗️ Building the application..."
-    - go build -v -o app ./...
-  artifacts:
-    paths:
-      - app
+    - echo "hello from GitLab from Nova backend"
+
