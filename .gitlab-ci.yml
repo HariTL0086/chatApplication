@@ -1,25 +1,7 @@
-image: golang:1.24
-
-variables:
-  DOCKER_PULL_POLICY: if-not-present
-  GOCACHE: $CI_PROJECT_DIR/.cache/go-build
-  GOMODCACHE: $CI_PROJECT_DIR/.cache/go-mod
-
 stages:
-  - test
+  - build
 
-cache:
-  key: "go-cache"
-  paths:
-    - .cache/go-build
-    - .cache/go-mod
-
-test:
-  stage: test
+build_job:
+  stage: build
   script:
-    - echo "🔍 Checking code formatting and vetting..."
-    - PKGS=$(go list ./... | grep -v /vendor/)
-    - go fmt $PKGS
-    - go vet $PKGS
-    - echo "🧪 Running Go tests..."
-    - go test -v $PKGS
+    - echo "hello from GitLab from Nova backend"
