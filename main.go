@@ -22,7 +22,7 @@ func main() {
 	// Connect to database using config
 	db, err := database.NewDB(cfg.GetDatabaseURL())
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		log.Fatalf("Failed to connect to datbase: %v", err)
 	}
 	defer db.Close()
 
